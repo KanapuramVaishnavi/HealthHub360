@@ -4,7 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	authentication "ex.com/Authentication"
+	authentication "HealthHub360/authentication"
+
 	"github.com/gin-gonic/gin"
 )
 

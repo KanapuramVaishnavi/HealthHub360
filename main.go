@@ -1,15 +1,16 @@
 package main
 
 import (
+	"HealthHub360/middleware"
+	"HealthHub360/routes"
+
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	router := gin.Default()
-	router.GET("/main", func(ctx *gin.Context) {
-		ctx.JSON(200, gin.H{
-			"Result": "Sucessufully Created",
-		})
-	})
+	//CORS Middleware
+	router.Use(middleware.CORSMiddleware())
+	routes.Routes(router)
 	router.Run(":8000")
 }

@@ -1,4 +1,4 @@
-module ex.com
+module HealthHub360
 
 go 1.25.4
 
