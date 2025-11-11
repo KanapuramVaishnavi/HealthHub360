@@ -1,16 +1,30 @@
 package main
 
 import (
+	"HealthHub360/db"
 	"HealthHub360/middleware"
 	"HealthHub360/routes"
+	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	db.ConnectDB()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
 	router := gin.Default()
 	//CORS Middleware
 	router.Use(middleware.CORSMiddleware())
 	routes.Routes(router)
-	router.Run(":8000")
+	router.Run(":" + port)
 }
