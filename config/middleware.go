@@ -59,9 +59,9 @@ Verify user exists  checks the collection of user
 sort according to the decreasing order by the key of
 Updated At
 */
-func verifyUserExists(collectionName, id string) error {
+func verifyUserExists(collectionName, code string) error {
 	collection := OpenCollections(collectionName)
-	filter := bson.M{"id": id}
+	filter := bson.M{"code": code}
 	var user bson.M
 	opts := options.FindOne().SetSort(bson.M{"UpdatedAt": -1})
 	err := FindOne(ctx, collection, filter, opts, &user)
@@ -109,14 +109,14 @@ func JWTAuth() gin.HandlerFunc {
 		}
 
 		if claims.Collection != "tenants" {
-			if err := verifyUserExists(claims.Collection, claims.ID); err != nil {
+			if err := verifyUserExists(claims.Collection, claims.Code); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				c.Abort()
 				return
 			}
 		}
 
-		c.Set("user_id", claims.ID)
+		c.Set("code", claims.Code)
 		c.Set("email", claims.Email)
 		c.Set("name", claims.Name)
 		c.Set("tenant_id", claims.TenantID)

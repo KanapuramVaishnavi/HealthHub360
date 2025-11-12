@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -92,4 +93,46 @@ func IsEmailExists(email string) (bool, error) {
 		return false, err
 	}
 	return emailcount > 0, err
+}
+
+/*
+here we will retrieve the user info from the collection
+where firstly the id is stored in the user context
+then we take the data from there then open the collection search for data
+with the id and assign it to the respective interface
+*/
+func GetUserInfo(c *gin.Context) bson.M {
+	user_id, err := c.Get("user_id")
+	if !err {
+		c.JSON(400, gin.H{
+			"error": "Not Existsing in the Context",
+		})
+		return nil
+	}
+	collectionNameValue, err := c.Get("collection")
+	if !err {
+		c.JSON(400, gin.H{
+			"error": "No Collection Found",
+		})
+		return nil
+	}
+	collectionName, ok := collectionNameValue.(string)
+	if !ok {
+		c.JSON(400, gin.H{
+			"error": "Invalid collection name type",
+		})
+		return nil
+	}
+	collection := config.OpenCollections(collectionName)
+	filter := bson.M{"id": user_id}
+	var user bson.M
+	error := config.FindOne(ctx, collection, filter, nil, &user)
+	if error != nil {
+		c.JSON(400, gin.H{
+			"error": error.Error(),
+		})
+		return nil
+	}
+	return user
+
 }
