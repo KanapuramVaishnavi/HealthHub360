@@ -93,3 +93,36 @@ func IsEmailExists(email string) (bool, error) {
 	}
 	return emailcount > 0, err
 }
+
+// /*
+// * UserFetch
+//  */
+// func UserFetch(ctx *gin.Context) (interface{}, error) {
+// 	id, exists := ctx.Get("user_id")
+// 	if !exists {
+// 		log.Println("Error while fetching from context")
+// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
+// 	}
+
+// 	claimsCollection, exists := ctx.Get("collection")
+// 	if !exists {
+// 		log.Println("Error while fetching from context")
+// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
+// 	}
+
+// 	collectionStr, exist := claimsCollection.(string)
+// 	if !exist {
+// 		log.Println("Error while converting from mongo collection to string")
+// 	}
+
+// 	var user bson.M
+// 	collection := config.OpenCollections(collectionStr)
+// 	filter := bson.M{"user_id": id}
+
+// 	err := config.FindOne(ctx, collection, filter, user)
+// 	if err != nil {
+// 		log.Println("Error while finding a document")
+// 		return nil, errors.New(util.ERR_NO_DOC_FOUND)
+// 	}
+// 	return user, nil
+// }
