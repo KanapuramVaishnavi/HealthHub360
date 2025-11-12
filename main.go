@@ -1,8 +1,7 @@
 package main
 
 import (
-	"HealthHub360/db"
-	"HealthHub360/middleware"
+	"HealthHub360/config"
 	"HealthHub360/routes"
 	"log"
 	"os"
@@ -17,14 +16,14 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	db.ConnectDB()
+	config.ConnectDB()
+	config.ConnectRedis()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8000"
 	}
 	router := gin.Default()
-	//CORS Middleware
-	router.Use(middleware.CORSMiddleware())
+	router.Use(config.CORSMiddleware())
 	routes.Routes(router)
 	router.Run(":" + port)
 }

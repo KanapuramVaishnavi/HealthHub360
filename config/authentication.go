@@ -1,6 +1,8 @@
-package authentication
+package config
 
 import (
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -9,10 +11,11 @@ import (
 var jwtKey = []byte("your_secret_key")
 
 type JWTClaim struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	TenantID string `json:"tenant_id"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	TenantID   string `json:"tenant_id"`
+	Collection string `json:"collection"`
 	jwt.RegisteredClaims
 }
 
@@ -21,15 +24,21 @@ Function For Generateing JWT Token where the claims
 takes the name,id,email as input and gets stored in the claims
 Storage in the  JWT token
 */
-func GenerateJWT(id, name, email, tenantID string) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour)
+func GenerateJWT(id, name, email, tenantID, collectionName string) (string, error) {
+	expMinutesStr := os.Getenv("JWT_EXP_MINUTES")
+	expMinutes, err := strconv.Atoi(expMinutesStr)
+	if err != nil || expMinutes <= 0 {
+		expMinutes = 60
+	}
+	expHours := time.Duration(expMinutes) * time.Minute
 	claims := &JWTClaim{
-		ID:       id,
-		Name:     name,
-		Email:    email,
-		TenantID: tenantID,
+		ID:         id,
+		Name:       name,
+		Email:      email,
+		TenantID:   tenantID,
+		Collection: collectionName,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expHours)),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

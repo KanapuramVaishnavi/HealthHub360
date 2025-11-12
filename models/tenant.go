@@ -1,14 +1,20 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
 
 type Tenant struct {
-	TenantID  string    `json:"tenantID" bson:"tenantID"`
-	Name      string    `json:"name" bson:"name"`
-	Mail      string    `json:"mail" bson:"mail"`
-	PhoneNo   string    `json:"phoneNo" bson:"phoneNo"`
-	Password  string    `json:"password,omitempty" bson:"password"`
-	Token     string    `json:"token,omitempty" bson:"token"`
-	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt" bson:"updatedAt"`
+	ID        primitive.ObjectID `json:"id" bson:"id"`
+	TenantID  string             `json:"tenantID" bson:"tenantID"`
+	Name      string             `json:"name" bson:"name"`
+	Mail      string             `json:"mail" bson:"mail"`
+	PhoneNo   string             `json:"phoneNo" bson:"phoneNo"`
+	Password  string             `json:"password,omitempty" bson:"password"`
+	Token     string             `json:"token,omitempty" bson:"token"`
+	IsActive  bool               `json:"isActive" bson:"isActive"`
+	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`
+	UpdatedAt time.Time          `json:"updatedAt" bson:"updatedAt"`
 }
