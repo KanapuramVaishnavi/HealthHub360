@@ -9,12 +9,13 @@ type Guardian struct {
 	Mail       string    `json:"guardianMail" bson:"guardianMail"`
 	Phone      string    `json:"guardianPhone" bson:"guardianPhone"`
 	GovtID     string    `json:"guardianGovtID" bson:"guardianGovtID"`
-	CreatedBy  string    `json:"createdBy" bson:"createdBy"`
 	Password   string    `json:"password,omitempty" bson:"password,omitempty"`
 	Signature  string    `json:"signature,omitempty" bson:"signature,omitempty"`
 	OTP        string    `json:"otp,omitempty" bson:"otp,omitempty"`
 	Token      string    `json:"token,omitempty" bson:"token,omitempty"`
 	IsActive   bool      `json:"isActive" bson:"isActive"`
 	CreatedAt  time.Time `json:"createdAt" bson:"createdAt"`
+	CreatedBy  string    `json:"createdBy" bson:"createdBy"`
 	UpdatedAt  time.Time `json:"updatedAt" bson:"updatedAt"`
+	UpdatedBy  string    `json:"updatedBy" bson:"updatedBy"`
 }
