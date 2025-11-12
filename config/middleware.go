@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var ctx context.Context = context.Background()
@@ -43,8 +42,7 @@ func verifyTenantExists(tenantID string) error {
 	tenantCollection := OpenCollections("tenants")
 	var tenant models.Tenant
 	filter := bson.M{"tenantID": tenantID}
-	opts := options.FindOne().SetSort(bson.M{"UpdatedAt": -1})
-	err := FindOne(ctx, tenantCollection, filter, opts, &tenant)
+	err := FindOne(ctx, tenantCollection, filter, &tenant)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
@@ -63,8 +61,7 @@ func verifyUserExists(collectionName, id string) error {
 	collection := OpenCollections(collectionName)
 	filter := bson.M{"id": id}
 	var user bson.M
-	opts := options.FindOne().SetSort(bson.M{"UpdatedAt": -1})
-	err := FindOne(ctx, collection, filter, opts, &user)
+	err := FindOne(ctx, collection, filter, user)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
