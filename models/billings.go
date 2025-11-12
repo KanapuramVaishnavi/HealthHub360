@@ -9,7 +9,6 @@ type Billing struct {
 	ServiceCharge float64   `json:"serviceCharge" bson:"serviceCharge"`
 	Amount        float64   `json:"amount" bson:"amount"`
 	Status        string    `json:"status" bson:"status"`
-	IsActive      bool      `json:"isActive" bson:"isActive"`
 	CreatedAt     time.Time `json:"createdAt" bson:"createdAt"`
 	CreatedBy     string    `json:"createdBy" bson:"createdBy"`
 	UpdatedAt     time.Time `json:"updatedAt" bson:"updatedAt"`

@@ -8,7 +8,6 @@ type Appointment struct {
 	DoctorID      string    `json:"doctorID" bson:"doctorID"`
 	Slot          time.Time `json:"slot" bson:"slot"`
 	Status        string    `json:"status" bson:"status"` //Scheduled,Completed,Cancelled
-	IsActive      bool      `json:"isActive" bson:"isActive"`
 	CreatedAt     time.Time `json:"createdAt" bson:"createdAt"`
 	CreatedBy     string    `json:"createdBy" bson:"createdBy"`
 	UpdatedAt     time.Time `json:"updatedAt" bson:"updatedAt"`

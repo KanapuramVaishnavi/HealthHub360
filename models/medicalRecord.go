@@ -12,7 +12,6 @@ type MedicalRecord struct {
 	Bp              string    `json:"bp" bson:"bp"`
 	RefID           string    `json:"refID" bson:"refID"`
 	Status          string    `json:"status" bson:"status"`
-	IsActive        bool      `json:"isActive" bson:"isActive"`
 	CreatedAt       time.Time `json:"createdAt" bson:"createdAt"`
 	CreatedBy       string    `json:"createdBy" bson:"createdBy"`
 	UpdatedAt       time.Time `json:"updatedAt" bson:"updatedAt"`

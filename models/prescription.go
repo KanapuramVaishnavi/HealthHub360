@@ -9,7 +9,6 @@ type Prescription struct {
 	Medicines      []string          `json:"medicines" bson:"medicines"`
 	Dosage         map[string]string `json:"dosage" bson:"dosage"`
 	Limit          []string          `json:"limit" bson:"limit"`
-	IsActive       bool              `json:"isActive" bson:"isActive"`
 	CreatedAt      time.Time         `json:"createdAt" bson:"createdAt"`
 	CreatedBy      string            `json:"createdBy" bson:"createdBy"`
 	UpdatedAt      time.Time         `json:"updatedAt" bson:"updatedAt"`
