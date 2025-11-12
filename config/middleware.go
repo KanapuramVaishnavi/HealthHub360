@@ -15,6 +15,12 @@ import (
 
 var ctx context.Context = context.Background()
 
+/*
+here we are extracting the info from header
+by trimming the prefix and if the header is valid only
+it gets passed other and checks whether the bearer
+Token is Invalid
+*/
 func extractTokenFromHeader(c *gin.Context) (string, error) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
@@ -27,6 +33,11 @@ func extractTokenFromHeader(c *gin.Context) (string, error) {
 	return tokenString, nil
 }
 
+/*
+Verify tenant exists  checks the collection of tenants
+sort according to the decreasing order by the key of
+Updated At
+*/
 func verifyTenantExists(tenantID string) error {
 
 	tenantCollection := OpenCollections("tenants")
@@ -43,6 +54,11 @@ func verifyTenantExists(tenantID string) error {
 	return nil
 }
 
+/*
+Verify user exists  checks the collection of user
+sort according to the decreasing order by the key of
+Updated At
+*/
 func verifyUserExists(collectionName, id string) error {
 	collection := OpenCollections(collectionName)
 	filter := bson.M{"id": id}
@@ -62,6 +78,14 @@ func verifyUserExists(collectionName, id string) error {
 	return nil
 }
 
+/*
+here
+1.first the extraction takes place
+2.Validation of token takes place
+3.Verify tenant is existing at the tenant level
+4.if the collection is other than tenants then it gets verify user exists function will be
+passed.
+*/
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := extractTokenFromHeader(c)
@@ -101,6 +125,10 @@ func JWTAuth() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+/*
+Here the cors middleware takes place
+*/
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // or specific domain
