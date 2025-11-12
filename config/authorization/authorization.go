@@ -1,12 +1,13 @@
-package config
+package authorization
 
 import (
+	"HealthHub360/config/db"
+	"HealthHub360/config/jwt"
+	"HealthHub360/models"
 	"context"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"HealthHub360/models"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -39,10 +40,10 @@ Updated At
 */
 func verifyTenantExists(tenantID string) error {
 
-	tenantCollection := OpenCollections("tenants")
+	tenantCollection := db.OpenCollections("tenants")
 	var tenant models.Tenant
 	filter := bson.M{"tenantID": tenantID}
-	err := FindOne(ctx, tenantCollection, filter, &tenant)
+	err := db.FindOne(ctx, tenantCollection, filter, &tenant)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
@@ -58,10 +59,10 @@ sort according to the decreasing order by the key of
 Updated At
 */
 func verifyUserExists(collectionName, code string) error {
-	collection := OpenCollections(collectionName)
+	collection := db.OpenCollections(collectionName)
 	filter := bson.M{"code": code}
 	var user bson.M
-	err := FindOne(ctx, collection, filter, user)
+	err := db.FindOne(ctx, collection, filter, user)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
@@ -92,7 +93,7 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
-		claims, err := ValidateToken(tokenString)
+		claims, err := jwt.ValidateToken(tokenString)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
 			c.Abort()
