@@ -15,6 +15,11 @@ import (
 var Rdb *redis.Client
 var Ctx = context.Background()
 
+/*
+Here The COnnection Of Redis
+Will Happen we look for the Connection of
+Redis with Username and Password
+*/
 func ConnectRedis() {
 
 	if err := godotenv.Load(); err != nil {
