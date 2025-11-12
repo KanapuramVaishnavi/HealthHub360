@@ -33,7 +33,7 @@ func verifyTenantExists(tenantID string) error {
 	var tenant models.Tenant
 	filter := bson.M{"tenantID": tenantID}
 	opts := options.FindOne().SetSort(bson.M{"UpdatedAt": -1})
-	err := FindOne(ctx, tenantCollection, filter, opts, tenant)
+	err := FindOne(ctx, tenantCollection, filter, opts, &tenant)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
@@ -48,7 +48,7 @@ func verifyUserExists(collectionName, id string) error {
 	filter := bson.M{"id": id}
 	var user bson.M
 	opts := options.FindOne().SetSort(bson.M{"UpdatedAt": -1})
-	err := FindOne(ctx, collection, filter, opts, user)
+	err := FindOne(ctx, collection, filter, opts, &user)
 	if err != nil {
 		return fmt.Errorf("database error: %v", err)
 	}
