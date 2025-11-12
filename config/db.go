@@ -77,8 +77,8 @@ func InsertOne(c context.Context, collection *mongo.Collection, document map[str
 * if err occur either no document found nor the findone error
 * Return error
  */
-func FindOne(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOneOptions, result interface{}) error {
-	SingleResult := collection.FindOne(c, filter, opts)
+func FindOne(c context.Context, collection *mongo.Collection, filter interface{}, result interface{}) error {
+	SingleResult := collection.FindOne(c, filter)
 	if err := SingleResult.Err(); err != nil {
 		if err == mongo.ErrNoDocuments {
 			return errors.New(util.ERR_NO_DOC_FOUND)
