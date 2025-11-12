@@ -140,3 +140,31 @@ func DeleteMany(ctx context.Context, collection *mongo.Collection, filter interf
 	}
 	return count, nil
 }
+
+/*
+* Update the document based on the collection given
+* Return error if the update fail
+* Else return the updated count
+ */
+func UpdateOne(ctx context.Context, collection *mongo.Collection, filter interface{}, update interface{}) (*mongo.UpdateResult, error) {
+	count, err := collection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		log.Println("Error while updating the document")
+		return nil, errors.New(util.ERR_WHILE_UPDATING)
+	}
+	return count, nil
+}
+
+/*
+* Update the document based on the collection given
+* Return error if the update fail
+* Else return the updated counts
+ */
+func UpdateMany(ctx context.Context, collection *mongo.Collection, filter interface{}, update interface{}, opts *options.UpdateOptions) (*mongo.UpdateResult, error) {
+	count, err := collection.UpdateMany(ctx, filter, update, opts)
+	if err != nil {
+		log.Println("Error while updating the documents")
+		return nil, errors.New(util.ERR_WHILE_UPDATING)
+	}
+	return count, nil
+}
