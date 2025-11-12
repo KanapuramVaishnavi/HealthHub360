@@ -11,7 +11,7 @@ import (
 var jwtKey = []byte("your_secret_key")
 
 type JWTClaim struct {
-	ID         string `json:"id"`
+	Code       string `json:"code"`
 	Name       string `json:"name"`
 	Email      string `json:"email"`
 	TenantID   string `json:"tenant_id"`
@@ -24,7 +24,7 @@ Function For Generateing JWT Token where the claims
 takes the name,id,email as input and gets stored in the claims
 Storage in the  JWT token
 */
-func GenerateJWT(id, name, email, tenantID, collectionName string) (string, error) {
+func GenerateJWT(code, name, email, tenantID, collectionName string) (string, error) {
 	expMinutesStr := os.Getenv("JWT_EXP_MINUTES")
 	expMinutes, err := strconv.Atoi(expMinutesStr)
 	if err != nil || expMinutes <= 0 {
@@ -32,7 +32,7 @@ func GenerateJWT(id, name, email, tenantID, collectionName string) (string, erro
 	}
 	expHours := time.Duration(expMinutes) * time.Minute
 	claims := &JWTClaim{
-		ID:         id,
+		Code:       code,
 		Name:       name,
 		Email:      email,
 		TenantID:   tenantID,
