@@ -16,6 +16,11 @@ import (
 
 var DB *mongo.Database
 
+/*
+* connection with dbClient uri
+* connect clinet with the db
+* check cient is active or not
+ */
 func ConnectDB() *mongo.Database {
 	uri := os.Getenv("MONGO_URI")
 	dbName := os.Getenv("DB_NAME")
@@ -44,9 +49,18 @@ func ConnectDB() *mongo.Database {
 	return DB
 }
 
+/*
+* Get collection and pass the collection
+ */
 func OpenCollections(collectionName string) *mongo.Collection {
 	return DB.Collection(collectionName)
 }
+
+/*
+* Input parameters:context,collection,document
+* Which insert into particular collection
+* Return count,error
+ */
 func InsertOne(c context.Context, collection *mongo.Collection, document map[string]interface{}) (*mongo.InsertOneResult, error) {
 	count, err := collection.InsertOne(c, document)
 	if err != nil {
@@ -57,6 +71,12 @@ func InsertOne(c context.Context, collection *mongo.Collection, document map[str
 	return count, nil
 }
 
+/*
+* To find the document inside particular db collection
+* Check for it if error doesnot occur pass the variable data to it
+* if err occur either no document found nor the findone error
+* Return error
+ */
 func FindOne(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOneOptions, result interface{}) error {
 	SingleResult := collection.FindOne(c, filter, opts)
 	if err := SingleResult.Err(); err != nil {
@@ -70,6 +90,12 @@ func FindOne(c context.Context, collection *mongo.Collection, filter interface{}
 	}
 	return nil
 }
+
+/*
+* To findAll inside the particular db collection
+* Pass each document into the list of interface
+* Check if the document present or not and then Decode and pass to the results
+ */
 
 func FindAll(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOptions, results []interface{}) error {
 
@@ -91,6 +117,9 @@ func FindAll(c context.Context, collection *mongo.Collection, filter interface{}
 	return nil
 }
 
+/*
+* Delete the particular document for the given collection filter condition
+ */
 func DeleteOne(c context.Context, collection *mongo.Collection, filter interface{}) (*mongo.DeleteResult, error) {
 	count, err := collection.DeleteOne(c, filter)
 	if err != nil {
@@ -100,6 +129,9 @@ func DeleteOne(c context.Context, collection *mongo.Collection, filter interface
 	return count, nil
 }
 
+/*
+* Delete documents in the particular collection based on the filter provided
+ */
 func DeleteMany(ctx context.Context, collection *mongo.Collection, filter interface{}) (*mongo.DeleteResult, error) {
 	count, err := collection.DeleteMany(ctx, filter)
 	if err != nil {
