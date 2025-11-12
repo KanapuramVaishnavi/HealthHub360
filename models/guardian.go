@@ -1,0 +1,20 @@
+package models
+
+import "time"
+
+type Guardian struct {
+	GuardianID string    `json:"guardianID" bson:"guardianID"`
+	RefID      string    `json:"refID" bson:"refID"`
+	Name       string    `json:"guardianName" bson:"guardianName"`
+	Mail       string    `json:"guardianMail" bson:"guardianMail"`
+	Phone      string    `json:"guardianPhone" bson:"guardianPhone"`
+	GovtID     string    `json:"guardianGovtID" bson:"guardianGovtID"`
+	CreatedBy  string    `json:"createdBy" bson:"createdBy"`
+	Password   string    `json:"password,omitempty" bson:"password,omitempty"`
+	Signature  string    `json:"signature,omitempty" bson:"signature,omitempty"`
+	OTP        string    `json:"otp,omitempty" bson:"otp,omitempty"`
+	Token      string    `json:"token,omitempty" bson:"token,omitempty"`
+	IsActive   bool      `json:"isActive" bson:"isActive"`
+	CreatedAt  time.Time `json:"createdAt" bson:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt" bson:"updatedAt"`
+}
