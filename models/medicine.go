@@ -8,7 +8,6 @@ type Medicine struct {
 	Dosage       string    `json:"dosage" bson:"dosage"`
 	NoOfStrips   int       `json:"noOfStrips" bson:"noOfStrips"`
 	Required     bool      `json:"required" bson:"required"`
-	IsActive     bool      `json:"isActive" bson:"isActive"`
 	CreatedAt    time.Time `json:"createdAt" bson:"createdAt"`
 	CreatedBy    string    `json:"createdBy" bson:"createdBy"`
 	UpdatedAt    time.Time `json:"updatedAt" bson:"updatedAt"`
