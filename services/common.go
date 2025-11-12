@@ -1,7 +1,8 @@
 package services
 
 import (
-	"HealthHub360/config"
+	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -16,7 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var tenantCollection *mongo.Collection = config.OpenCollections("tenant")
+var tenantCollection *mongo.Collection = db.OpenCollections("tenant")
 var ctx context.Context = context.Background()
 
 /*
@@ -40,7 +41,7 @@ func GenerateEmpCode(collName string) (string, error) {
 		return "", fmt.Errorf("unsupported collection: %s", collName)
 	}
 
-	collection := config.OpenCollections(collName)
+	collection := db.OpenCollections(collName)
 	// Find last document sorted by code descending
 	opts := options.FindOne().SetSort(bson.D{{Key: "tenantID", Value: -1}})
 	var lastDoc bson.M
@@ -101,15 +102,58 @@ func IsEmailExists(email string) (bool, error) {
 // /*
 //   - UserFetch
 //     */
-func UserFetch(ctx *gin.Context) (interface{}, error) {
-	//interface
-	id, exists := ctx.Get("user_id")
+// func UserFetch(ctx *gin.Context) (interface{}, error) {
+// 	//interface
+// 	id, exists := ctx.Get("user_id")
+// 	if !exists {
+// 		log.Println("Error while fetching from context")
+// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
+// 	}
+// 	//convert to string
+// 	idStr, exist := id.(string)
+// 	if !exist {
+// 		log.Println("Error while converting from mongo collection to string")
+// 	}
+
+// 	claimsCollection, exists := ctx.Get("collection")
+// 	if !exists {
+// 		log.Println("Error while fetching from context")
+// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
+// 	}
+
+// 	collectionStr, exist := claimsCollection.(string)
+// 	if !exist {
+// 		log.Println("Error while converting from mongo collection to string")
+// 	}
+
+// 	var user bson.M
+// 	collection := db.OpenCollections(collectionStr)
+// 	filter := bson.M{"user_id": idStr}
+
+// 	err := db.FindOne(ctx, collection, filter, user)
+// 	if err != nil {
+// 		log.Println("Error while finding a document")
+// 		return nil, errors.New(util.ERR_NO_DOC_FOUND)
+// 	}
+// 	return user, nil
+// }
+
+/*
+* Fetch user by code
+* Fetch from cache either exist return true nor false
+* If true return user ,if not go to db
+* Fetch from db that return error
+* If no doc found nor fetching error return error ,if not bind with the varibale
+* Set the value into the cache and then return the bind with the variable
+ */
+func FetchUserByCode(ctx *gin.Context) (interface{}, error) {
+
+	code, exists := ctx.Get("code")
 	if !exists {
 		log.Println("Error while fetching from context")
 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
 	}
-	//convert to string
-	idStr, exist := id.(string)
+	codeStr, exist := code.(string)
 	if !exist {
 		log.Println("Error while converting from mongo collection to string")
 	}
@@ -119,20 +163,30 @@ func UserFetch(ctx *gin.Context) (interface{}, error) {
 		log.Println("Error while fetching from context")
 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
 	}
-
 	collectionStr, exist := claimsCollection.(string)
 	if !exist {
 		log.Println("Error while converting from mongo collection to string")
 	}
+	collection := db.OpenCollections(collectionStr)
 
 	var user bson.M
-	collection := config.OpenCollections(collectionStr)
-	filter := bson.M{"user_id": idStr}
-
-	err := config.FindOne(ctx, collection, filter, user)
+	filter := bson.M{"code": codeStr}
+	exists, err := redis.GetCache(ctx, codeStr, user)
 	if err != nil {
-		log.Println("Error while finding a document")
-		return nil, errors.New(util.ERR_NO_DOC_FOUND)
+		return nil, err
+	}
+	if !exists {
+		err := db.FindOne(ctx, collection, filter, user)
+		if err != nil {
+			log.Println("Database fetch failed:", err)
+			return nil, err
+
+		}
+		err = redis.SetCache(ctx, codeStr, user)
+		if err != nil {
+			log.Println("Failed to set cache:", err)
+			return nil, err
+		}
 	}
 	return user, nil
 }

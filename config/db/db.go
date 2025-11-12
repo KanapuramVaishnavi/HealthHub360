@@ -1,4 +1,4 @@
-package config
+package db
 
 import (
 	"HealthHub360/util"
@@ -61,12 +61,24 @@ func OpenCollections(collectionName string) *mongo.Collection {
 * Which insert into particular collection
 * Return count,error
  */
-func InsertOne(c context.Context, collection *mongo.Collection, document map[string]interface{}) (*mongo.InsertOneResult, error) {
+func CreateOne(c context.Context, collection *mongo.Collection, document map[string]interface{}) (*mongo.InsertOneResult, error) {
 	count, err := collection.InsertOne(c, document)
 	if err != nil {
 
 		log.Println("Error while inserting the document", err)
 		return nil, errors.New(util.ERR_WHILE_INSERTING)
+	}
+	return count, nil
+}
+
+/*
+* Create Many records with the collection given
+ */
+func CreateMany(c context.Context, collection *mongo.Collection, documents []interface{}) (*mongo.InsertManyResult, error) {
+	count, err := collection.InsertMany(c, documents)
+	if err != nil {
+		log.Println("Error while inserting the document", err)
+		return nil, errors.New(util.ERR_WHILE_INSERTING_MANY)
 	}
 	return count, nil
 }
@@ -115,6 +127,32 @@ func FindAll(c context.Context, collection *mongo.Collection, filter interface{}
 		return err
 	}
 	return nil
+}
+
+/*
+* Find list of documents based on the filter and as well as the collection provided
+* Based on the skip conditions we get them
+ */
+func FindByPage(c context.Context, collection *mongo.Collection, filter interface{}, page int, size int) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+	skip := (page - 1) * size
+	opts := options.Find()
+	opts.SetSkip(int64(skip))
+	opts.SetLimit(int64(size))
+	opts.SetSort(bson.D{{Key: "UpdatedAt", Value: -1}})
+	cursor, err := collection.Find(c, filter, opts)
+	if cursor.Next(c) {
+		doc := make(map[string]interface{})
+		if err := cursor.Decode(&doc); err != nil {
+			log.Println("Error decoding document:", err)
+			return nil, err
+		}
+		results = append(results, doc)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 /*

@@ -6,4 +6,5 @@ var (
 	ERR_WHILE_DELETING             string = "Error while deleting the document"
 	ERR_WHILE_UPDATING             string = "Error while updateing the document"
 	ERROR_WHILE_FETCH_FROM_CONTEXT string = "Error while fetching from the context"
+	ERR_WHILE_INSERTING_MANY       string = "Error while inserting many records"
 )
