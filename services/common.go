@@ -10,6 +10,7 @@ import (
 	"log"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -17,7 +18,12 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var tenantCollection *mongo.Collection = db.OpenCollections("tenant")
+var tenantCollection *mongo.Collection
+
+func InitCommonCollections() {
+	RoleCollection = db.OpenCollections("role")
+}
+
 var ctx context.Context = context.Background()
 
 /*
@@ -29,7 +35,7 @@ func GenerateEmpCode(collName string) (string, error) {
 	// Define prefix and number width for each collection
 	var prefix string
 	width := 4 // e.g. T0001 → 4 digits
-
+	var sortField string = "roleCode"
 	switch collName {
 	case "tenant", "tenants":
 		prefix = "T"
@@ -37,13 +43,17 @@ func GenerateEmpCode(collName string) (string, error) {
 		prefix = "P"
 	case "doctors", "doctor":
 		prefix = "D"
+	case "superAdmin":
+		prefix = "S"
+	case "Role", "role":
+		prefix = "R"
 	default:
 		return "", fmt.Errorf("unsupported collection: %s", collName)
 	}
 
 	collection := db.OpenCollections(collName)
 	// Find last document sorted by code descending
-	opts := options.FindOne().SetSort(bson.D{{Key: "tenantID", Value: -1}})
+	opts := options.FindOne().SetSort(bson.D{{Key: sortField, Value: -1}})
 	var lastDoc bson.M
 
 	err := collection.FindOne(ctx, bson.M{}, opts).Decode(&lastDoc)
@@ -56,7 +66,7 @@ func GenerateEmpCode(collName string) (string, error) {
 	}
 
 	// Extract last code
-	codeVal, ok := lastDoc["tenantID"].(string)
+	codeVal, ok := lastDoc[sortField].(string)
 	if !ok || codeVal == "" {
 		return fmt.Sprintf("%s%0*d", prefix, width, 1), nil
 	}
@@ -78,9 +88,10 @@ func GenerateEmpCode(collName string) (string, error) {
 	return newCode, nil
 }
 
-func IsPhoneNumberExists(phone string) (bool, error) {
+func IsPhoneNumberExists(collName string, phone string) (bool, error) {
+	collection := db.OpenCollections(collName)
 	filter := bson.M{"phone": phone}
-	count, err := tenantCollection.CountDocuments(context.Background(), filter)
+	count, err := collection.CountDocuments(context.Background(), filter)
 	if err != nil {
 		return false, err
 	}
@@ -90,13 +101,48 @@ func IsPhoneNumberExists(phone string) (bool, error) {
 /*
 Here It Verify Whether the Email is present in The Database.
 */
-func IsEmailExists(email string) (bool, error) {
+func IsEmailExists(collName string, email string) (bool, error) {
+	collection := db.OpenCollections(collName)
 	filter := bson.M{"email": email}
-	emailcount, err := tenantCollection.CountDocuments(context.Background(), filter)
+	emailcount, err := collection.CountDocuments(context.Background(), filter)
 	if err != nil {
 		return false, err
 	}
 	return emailcount > 0, err
+}
+
+/*
+function for normalizing the Email
+*/
+func NormalizeEmail(email string) string {
+	loweredEmail := strings.ToLower(email)
+	trimmedEmail := strings.TrimSpace(loweredEmail)
+	if strings.Contains(trimmedEmail, " ") {
+		return ""
+	}
+	return trimmedEmail
+}
+
+/*
+function for normalizing the phone Number
+*/
+func NormalizePhoneNumber(phone string) string {
+	trimmedPhone := strings.TrimSpace(phone)
+	if strings.Contains(trimmedPhone, " ") {
+		return ""
+	}
+	return trimmedPhone
+}
+
+/*
+Function For Phone Number Validation
+*/
+func IsPhoneNumberValid(phone string) bool {
+	trimmedPhone := strings.TrimSpace(phone)
+	rephone := strings.ReplaceAll(trimmedPhone, " ", "")
+	re := regexp.MustCompile(`^(\+91)?[6-9]\d{9}$`)
+	check := re.MatchString(rephone)
+	return check
 }
 
 // /*

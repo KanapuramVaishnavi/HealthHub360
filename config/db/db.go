@@ -61,7 +61,7 @@ func OpenCollections(collectionName string) *mongo.Collection {
 * Which insert into particular collection
 * Return count,error
  */
-func CreateOne(c context.Context, collection *mongo.Collection, document map[string]interface{}) (*mongo.InsertOneResult, error) {
+func CreateOne(c context.Context, collection *mongo.Collection, document interface{}) (*mongo.InsertOneResult, error) {
 	count, err := collection.InsertOne(c, document)
 	if err != nil {
 

@@ -9,7 +9,7 @@ import (
 type Tenant struct {
 	ID        primitive.ObjectID `json:"id" bson:"id"`
 	Code      string             `json:"code" bson:"code"`
-	TenantID  string             `json:"tenantID" bson:"tenantID"`
+	RoleCode  string             `json:"roleCode" bson:"roleCode"`
 	Name      string             `json:"name" bson:"name"`
 	Mail      string             `json:"mail" bson:"mail"`
 	PhoneNo   string             `json:"phoneNo" bson:"phoneNo"`
