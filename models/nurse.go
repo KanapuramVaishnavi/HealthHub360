@@ -9,7 +9,6 @@ import (
 type Nurse struct {
 	ID        primitive.ObjectID `json:"id" bson:"id"`
 	Code      string             `json:"code" bson:"code"`
-	NurseID   string             `json:"nurseID" bson:"nurseID"`
 	Name      string             `json:"name" bson:"name"`
 	Mail      string             `json:"mail" bson:"mail"`
 	PhoneNo   string             `json:"phoneNo" bson:"phoneNo"`

@@ -100,7 +100,7 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
-		if err := verifyTenantExists(claims.TenantID); err != nil {
+		if err := verifyTenantExists(claims.RoleCode); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			c.Abort()
 			return
@@ -117,7 +117,7 @@ func JWTAuth() gin.HandlerFunc {
 		c.Set("code", claims.Code)
 		c.Set("email", claims.Email)
 		c.Set("name", claims.Name)
-		c.Set("tenant_id", claims.TenantID)
+		c.Set("roleCode", claims.RoleCode)
 		c.Set("collection", claims.Collection)
 
 		c.Next()

@@ -14,7 +14,7 @@ type JWTClaim struct {
 	Code       string `json:"code"`
 	Name       string `json:"name"`
 	Email      string `json:"email"`
-	TenantID   string `json:"tenant_id"`
+	RoleCode   string `json:"roleCode"`
 	Collection string `json:"collection"`
 	jwt.RegisteredClaims
 }
@@ -24,7 +24,7 @@ Function For Generateing JWT Token where the claims
 takes the name,id,email as input and gets stored in the claims
 Storage in the  JWT token
 */
-func GenerateJWT(code, name, email, tenantID, collectionName string) (string, error) {
+func GenerateJWT(code, name, email, roleCode, collectionName string) (string, error) {
 	expMinutesStr := os.Getenv("JWT_EXP_MINUTES")
 	expMinutes, err := strconv.Atoi(expMinutesStr)
 	if err != nil || expMinutes <= 0 {
@@ -35,7 +35,7 @@ func GenerateJWT(code, name, email, tenantID, collectionName string) (string, er
 		Code:       code,
 		Name:       name,
 		Email:      email,
-		TenantID:   tenantID,
+		RoleCode:   roleCode,
 		Collection: collectionName,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expHours)),

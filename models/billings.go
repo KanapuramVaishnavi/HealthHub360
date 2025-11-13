@@ -9,7 +9,6 @@ import (
 type Billing struct {
 	ID            primitive.ObjectID `json:"id" bson:"id"`
 	Code          string             `json:"code" bson:"code"`
-	BillingID     string             `json:"billingID" bson:"billingID"`
 	AppointmentID string             `json:"appointmentID" bson:"appointmentID"`
 	PatientID     string             `json:"patientID" bson:"patientID"`
 	ServiceCharge float64            `json:"serviceCharge" bson:"serviceCharge"`

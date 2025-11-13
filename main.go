@@ -4,6 +4,7 @@ import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
 	"HealthHub360/routes"
+	"HealthHub360/services"
 	"log"
 	"os"
 
@@ -18,6 +19,8 @@ func main() {
 	}
 
 	db.ConnectDB()
+	services.InitCommonCollections()
+	services.InitCollections()
 	redis.ConnectRedis()
 	port := os.Getenv("PORT")
 	if port == "" {

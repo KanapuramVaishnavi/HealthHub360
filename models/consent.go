@@ -9,7 +9,6 @@ import (
 type Consent struct {
 	ID                primitive.ObjectID `json:"id" bson:"id"`
 	Code              string             `json:"code" bson:"code"`
-	ConsentID         string             `json:"consentID" bson:"consentID"`
 	ConsentType       string             `json:"consentType" bson:"consentType"` // General,Surgery,DataSharing
 	ConsentPermission string             `json:"consentPermission" bson:"consentPermission"`
 	RefID             string             `json:"refID" bson:"refID"` // PatientID
