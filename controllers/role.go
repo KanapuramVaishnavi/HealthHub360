@@ -58,19 +58,23 @@ func PrepareData(roleData map[string]interface{}) role.Role {
 }
 
 func CreateRole(c *gin.Context) {
+
 	var roleData map[string]interface{}
 
 	if err := c.ShouldBindJSON(&roleData); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
 	data := PrepareData(roleData)
 	ctx := context.Background()
+
 	insertedRole, err := services.CreateRole(ctx, data)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "SuperAdmin Role created successfully",
 		"data":    insertedRole,
