@@ -89,12 +89,17 @@ func CreateMany(c context.Context, collection *mongo.Collection, documents []int
 * if err occur either no document found nor the findone error
 * Return error
  */
-func FindOne(c context.Context, collection *mongo.Collection, filter interface{}, result interface{}) error {
-	SingleResult := collection.FindOne(c, filter)
+func FindOne(ctx context.Context, collection *mongo.Collection, filter interface{}, result interface{}) error {
+
+	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	SingleResult := collection.FindOne(ctxTimeout, filter)
 	if err := SingleResult.Err(); err != nil {
+		log.Println("error from the findOne function")
 		if err == mongo.ErrNoDocuments {
 			return errors.New(util.ERR_NO_DOC_FOUND)
 		}
+		return err
 	}
 	if err := SingleResult.Decode(result); err != nil {
 		log.Println("Error decoding document:", err)
