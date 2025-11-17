@@ -271,6 +271,12 @@ func hasAccess(privileges []map[string]interface{}, moduleName string, access st
 		fmt.Errorf("module '%s' not found in privileges", moduleName)
 }
 
+/*
+* Extract roleCode from the context
+* Get the document based on the roleCode
+* Check for the privileges
+* validate privileges and access whether they are valid or not will be checked here,Validate the access
+ */
 func Authorize(moduleName string, access string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleCode, err := getRoleCode(c)
