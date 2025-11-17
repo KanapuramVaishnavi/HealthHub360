@@ -8,9 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
+	"net/smtp"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -145,60 +149,44 @@ func IsPhoneNumberValid(phone string) bool {
 	return check
 }
 
+/*
+Changes the DOB of any form into A Single DOB form
+and make it parse and format into our style of DOB
+checkes it its done return error if it is any invalid format
+*/
+func NormalizeDOB(dobStr string) (string, error) {
+	formats := []string{
+		"2006-01-02",
+		"02-01-2006",
+		"02/01/2006",
+		"2006/01/02",
+	}
+
+	dobStr = strings.TrimSpace(dobStr)
+
+	var dob time.Time
+	var err error
+
+	for _, format := range formats {
+		dob, err = time.Parse(format, dobStr)
+		if err == nil {
+			return dob.Format("2006-01-02"), nil
+		}
+	}
+	return "", errors.New("invalid DOB format")
+}
+
 // /*
 //   - UserFetch
 //     */
-// func UserFetch(ctx *gin.Context) (interface{}, error) {
-// 	//interface
-// 	id, exists := ctx.Get("user_id")
-// 	if !exists {
-// 		log.Println("Error while fetching from context")
-// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
-// 	}
-// 	//convert to string
-// 	idStr, exist := id.(string)
-// 	if !exist {
-// 		log.Println("Error while converting from mongo collection to string")
-// 	}
-
-// 	claimsCollection, exists := ctx.Get("collection")
-// 	if !exists {
-// 		log.Println("Error while fetching from context")
-// 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
-// 	}
-
-// 	collectionStr, exist := claimsCollection.(string)
-// 	if !exist {
-// 		log.Println("Error while converting from mongo collection to string")
-// 	}
-
-// 	var user bson.M
-// 	collection := db.OpenCollections(collectionStr)
-// 	filter := bson.M{"user_id": idStr}
-
-// 	err := db.FindOne(ctx, collection, filter, user)
-// 	if err != nil {
-// 		log.Println("Error while finding a document")
-// 		return nil, errors.New(util.ERR_NO_DOC_FOUND)
-// 	}
-// 	return user, nil
-// }
-
-/*
-* Fetch user by code
-* Fetch from cache either exist return true nor false
-* If true return user ,if not go to db
-* Fetch from db that return error
-* If no doc found nor fetching error return error ,if not bind with the varibale
-* Set the value into the cache and then return the bind with the variable
- */
-func FetchUserByCode(ctx *gin.Context) (interface{}, error) {
-
+func UserFetch(ctx *gin.Context) (interface{}, error) {
+	//interface
 	code, exists := ctx.Get("code")
 	if !exists {
 		log.Println("Error while fetching from context")
 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
 	}
+	//convert to string
 	codeStr, exist := code.(string)
 	if !exist {
 		log.Println("Error while converting from mongo collection to string")
@@ -209,15 +197,39 @@ func FetchUserByCode(ctx *gin.Context) (interface{}, error) {
 		log.Println("Error while fetching from context")
 		return nil, errors.New(util.ERROR_WHILE_FETCH_FROM_CONTEXT)
 	}
+
 	collectionStr, exist := claimsCollection.(string)
 	if !exist {
 		log.Println("Error while converting from mongo collection to string")
 	}
-	collection := db.OpenCollections(collectionStr)
 
 	var user bson.M
-	filter := bson.M{"code": codeStr}
-	exists, err := redis.GetCache(ctx, codeStr, user)
+	collection := db.OpenCollections(collectionStr)
+	filter := bson.M{"user_id": codeStr}
+
+	err := db.FindOne(ctx, collection, filter, user)
+	if err != nil {
+		log.Println("Error while finding a document")
+		return nil, errors.New(util.ERR_NO_DOC_FOUND)
+	}
+	return user, nil
+}
+
+/*
+* Fetch user by code
+* Fetch from cache either exist return true nor false
+* If true return user ,if not go to db
+* Fetch from db that return error
+* If no doc found nor fetching error return error ,if not bind with the varibale
+* Set the value into the cache and then return the bind with the variable
+ */
+func FetchUserByCode(ctx *gin.Context, code string, collectionStr string) (interface{}, error) {
+
+	collection := db.OpenCollections(collectionStr)
+
+	user := make(map[string]interface{})
+	filter := bson.M{"code": code}
+	exists, err := redis.GetCache(ctx, code, user)
 	if err != nil {
 		return nil, err
 	}
@@ -228,11 +240,102 @@ func FetchUserByCode(ctx *gin.Context) (interface{}, error) {
 			return nil, err
 
 		}
-		err = redis.SetCache(ctx, codeStr, user)
+		err = redis.SetCache(ctx, code, user)
 		if err != nil {
 			log.Println("Failed to set cache:", err)
 			return nil, err
 		}
 	}
 	return user, nil
+}
+
+/*
+* Generate a random otp upto 999999
+ */
+func GenerateOTP() string {
+	rand.Seed(time.Now().UnixNano())
+	return fmt.Sprintf("%06d", rand.Intn(1000000))
+}
+
+/*
+ */
+func SendOTPToMail(to, subject, body string) error {
+	from := os.Getenv("SMTP_FROM")
+	username := os.Getenv("SMTP_USER")
+	password := os.Getenv("SMTP_PASSWORD")
+	smtpHost := os.Getenv("SMTP_HOST")
+	smtpPort := os.Getenv("SMTP_PORT")
+
+	message := []byte(fmt.Sprintf(
+		"From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=\"UTF-8\";\r\n\r\n%s",
+		from, to, subject, body,
+	))
+
+	auth := smtp.PlainAuth("", username, password, smtpHost)
+
+	return smtp.SendMail(smtpHost+":"+smtpPort, auth, from, []string{to}, message)
+}
+
+func IscodeExists(collName string, code string) (bool, error) {
+	collection := db.OpenCollections(collName)
+	filter := bson.M{"code": code}
+	emailcount, err := collection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return false, err
+	}
+	return emailcount > 0, err
+}
+
+/*
+Checker validates email and phone number formats.
+It also checks the database to ensure both fields do not already exist.
+Returns an error if any validation rule fails.
+*/
+func Checker(Email string, Phone string, role string, code string) error {
+	if Phone == "" {
+		return errors.New("Missing Phone Field")
+	}
+	if Email == "" {
+		return errors.New("Missing Email Field")
+	}
+	email := NormalizeEmail(Email)
+	if email == "" {
+		return errors.New(util.EMAIL_NOT_VALID)
+	}
+	emailsCount, emailError := IsEmailExists(role, Email)
+	if emailError != nil {
+		return emailError
+	}
+	if emailsCount == true {
+		log.Println("Email Exists triggered")
+		return errors.New(util.USER_EXISTING_EMAIL)
+	}
+	modifiedPhoneNumber := NormalizePhoneNumber(Phone)
+	if modifiedPhoneNumber == "" {
+		return errors.New(util.PHONENUMBER_NOT_VALID)
+	}
+	Phone = modifiedPhoneNumber
+	check := IsPhoneNumberValid(Phone)
+	if check == false {
+		return errors.New(util.PHONE_NUMBER_VALIDATION)
+	}
+	phoneNumbersCount, phoneNumberError := IsPhoneNumberExists(role, Phone)
+	if phoneNumberError != nil {
+		return phoneNumberError
+	}
+	if phoneNumbersCount == true {
+		log.Println("IsPhone Number Triggered")
+		return errors.New(util.USER_EXISTING_PHONE)
+	}
+	if code != "" {
+		codeCount, codeError := IscodeExists(role, code)
+		if codeError != nil {
+			return phoneNumberError
+		}
+		if codeCount == true {
+			log.Println("IsPhone Number Triggered")
+			return errors.New(util.USER_EXISTING_PHONE)
+		}
+	}
+	return nil
 }
