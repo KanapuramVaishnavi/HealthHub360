@@ -107,6 +107,10 @@ func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interfa
 		return nil, err
 	}
 
+	if err := CheckDuplicateModules(privileges); err != nil {
+		return nil, err
+	}
+
 	collection := db.OpenCollections("role")
 	roleData["CreatedBy"] = "SYSTEM"
 	roleData["UpdatedBy"] = "SYSTEM"

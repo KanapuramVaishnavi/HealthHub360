@@ -74,3 +74,27 @@ func CheckIfPrivilegesIsEmpty(c context.Context, previleges []map[string]interfa
 	}
 	return true, nil
 }
+
+/*
+*  Check if the same module present in the array
+ */
+func CheckDuplicateModules(privileges []map[string]interface{}) error {
+	moduleSet := make(map[string]bool)
+
+	for _, p := range privileges {
+		module, _ := p["module"].(string)
+		moduleClean := strings.TrimSpace(module)
+
+		if moduleClean == "" {
+			continue
+		}
+
+		if moduleSet[moduleClean] {
+			return fmt.Errorf("duplicate module found: %s", moduleClean)
+		}
+
+		moduleSet[moduleClean] = true
+	}
+
+	return nil
+}
