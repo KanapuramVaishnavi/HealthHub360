@@ -1,6 +1,7 @@
 package main
 
 import (
+	"HealthHub360/config/authorization"
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
 	"HealthHub360/routes"
@@ -27,7 +28,7 @@ func main() {
 		port = "8000"
 	}
 	router := gin.Default()
-	// router.Use(config.CORSMiddleware())
+	router.Use(authorization.CORSMiddleware())
 	routes.Routes(router)
 	router.Run(":" + port)
 }
