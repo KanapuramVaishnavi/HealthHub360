@@ -3,9 +3,12 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -48,6 +51,21 @@ func ConnectRedis() {
 	}
 
 	log.Println("Connected to Redis successfully!")
+}
+
+func CreateCacheKey(collectionName, code string) (string, error) {
+	if strings.TrimSpace(collectionName) == "" {
+		return "", errors.New("collection name is required")
+	}
+	if strings.TrimSpace(code) == "" {
+		return "", errors.New("code is required")
+	}
+
+	// Convert collection name to UPPERCASE
+	upperName := strings.ToUpper(collectionName)
+
+	key := fmt.Sprintf("%s#%s", upperName, code)
+	return key, nil
 }
 
 /*
@@ -95,4 +113,8 @@ func GetCache(c context.Context, key string, dest interface{}) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func DeleteCache(c context.Context, key string) error {
+	return Rdb.Del(c, key).Err()
 }

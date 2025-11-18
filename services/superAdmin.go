@@ -2,19 +2,59 @@ package services
 
 import (
 	"HealthHub360/config/db"
-	"HealthHub360/config/jwt"
+	"HealthHub360/config/redis"
+	"HealthHub360/models"
 	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"golang.org/x/crypto/bcrypt"
 )
+
+/*
+* Insert into the loginRecord
+ */
+func CreateLoginRecord(ctx context.Context, role string, code string, email string, phone string, password string) error {
+
+	loginCollection := db.OpenCollections("login")
+	filter := bson.M{
+		"$or": []bson.M{
+			{"code": code},
+			{"email": email},
+			{"phoneNo": phone},
+		},
+	}
+
+	var existing models.Login
+	err := db.FindOne(ctx, loginCollection, filter, &existing)
+	if err == nil {
+		return fmt.Errorf("login already exists with same code, email or phone")
+	}
+
+	if err.Error() == util.ERR_NO_DOC_FOUND {
+		login := models.Login{
+			Code:       code,
+			Collection: role,
+			Email:      email,
+			PhoneNo:    phone,
+			Password:   password,
+		}
+
+		_, err = db.CreateOne(ctx, loginCollection, login)
+		if err != nil {
+			return fmt.Errorf("failed to create login record: %v", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("findOne error: %v", err)
+}
 
 /*
 PrepareSuperAdmin formats and validates SuperAdmin data.
@@ -36,6 +76,9 @@ func PrepareSuperAdmin(input map[string]interface{}, name string, email string, 
 	input["_id"] = primitive.NewObjectID()
 	input["code"] = code
 	input["roleCode"] = roleCode
+	input["token"] = ""
+	input["reset"] = true
+	input["isActive"] = true
 	input["createdAt"] = time.Now()
 	input["updatedAt"] = time.Now()
 
@@ -47,15 +90,27 @@ CreateSuperAdmin handles creating a SuperAdmin user.
 It validates email/phone, generates employee code, fetches roleCode,
 prepares the data, and inserts the record into MongoDB.
 */
-func CreateSuperAdmin(input map[string]interface{}) error {
+func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
+
 	name, _ := input["name"].(string)
-	Email, _ := input["email"].(string)
-	Phone, _ := input["phoneNo"].(string)
+	email, _ := input["email"].(string)
+	phoneNo, _ := input["phoneNo"].(string)
 	role := "superAdmin"
-	err := Checker(Email, Phone, role, "")
+	err := Checker(email, phoneNo, role, "")
 	if err != nil {
 		return err
 	}
+	collection := db.OpenCollections("superAdmin")
+
+	docs, err := db.FindAll(ctx, collection, bson.M{}, nil)
+	if err != nil {
+		return err
+	}
+
+	if len(docs) >= 1 {
+		return errors.New("SuperAdmin already exists")
+	}
+
 	code, err := GenerateEmpCode(role)
 	if err != nil {
 		return err
@@ -76,179 +131,45 @@ func CreateSuperAdmin(input map[string]interface{}) error {
 	if !ok {
 		return errors.New("invalid roleCode type in role collection")
 	}
-	if err := PrepareSuperAdmin(input, name, Email, code, roleCode); err != nil {
+	if err := PrepareSuperAdmin(input, name, email, code, roleCode); err != nil {
 		return err
 	}
 	otp := GenerateOTP()
-	input["password"] = otp
-	input["token"] = ""
+	log.Println("otp:", otp)
+	hashedOTP, hashErr := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	if hashErr != nil {
+		return fmt.Errorf("failed to hash OTP: %v", hashErr)
+	}
+	log.Println(string(hashedOTP))
+
+	input["password"] = string(hashedOTP)
 	superadmin := db.OpenCollections(role)
 	res, err := db.CreateOne(context.Background(), superadmin, input)
 	if err != nil {
 		return err
 	}
 	log.Println(res.InsertedID)
+	err = CreateLoginRecord(c, role, code, email, phoneNo, string(hashedOTP))
+	if err != nil {
+		log.Println("Error from the createLoginRecord")
+		return err
+	}
 
+	key, err := redis.CreateCacheKey("SuperAdmin", code)
+	if err != nil {
+		log.Println("Error from the create Key cache in create superAdmin", err)
+		return errors.New("error from create cache key")
+	}
+
+	err = redis.SetCache(c, key, input)
 	subject := "Your SuperAdmin OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for SuperAdmin verification is: %s\n\nThank you!", name, otp)
 
-	err = SendOTPToMail(Email, subject, body)
+	err = SendOTPToMail(email, subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
 	}
 	log.Println("mail sent successfully")
 	return nil
-}
-
-/*
-* Check is the emailExists,phoneExists,codeExists or not
-* If non of these three exists then throw error
-* If any of the field provided and the value is empty or type assertion then throw error
- */
-func validateSuperAdminLoginInput(data map[string]interface{}) error {
-	password, passExists := data["password"]
-
-	if !passExists || strings.TrimSpace(password.(string)) == "" {
-		return errors.New(util.PASSWORD_NOT_PROVIDED)
-	}
-
-	_, emailExists := data["email"]
-	_, phoneExists := data["phoneNo"]
-	_, codeExists := data["code"]
-
-	if !emailExists && !phoneExists && !codeExists {
-		return errors.New(util.PLEASE_PROVIDE_EMAIL_OR_PHONE_OR_CODE)
-	}
-
-	if emailExists {
-		if v, ok := data["email"].(string); !ok || strings.TrimSpace(v) == "" {
-			return errors.New(util.EMAIL_NOT_PROVIDED)
-		}
-	}
-
-	if phoneExists {
-		if v, ok := data["phoneNo"].(string); !ok || strings.TrimSpace(v) == "" {
-			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
-		}
-	}
-
-	if codeExists {
-		if v, ok := data["code"].(string); !ok || strings.TrimSpace(v) == "" {
-			return errors.New(util.CODE_NOT_PROVIDED)
-		}
-	}
-
-	return nil
-}
-
-/*
-* Create Filter to find the document in db
- */
-func buildSuperAdminFilter(data map[string]interface{}) bson.M {
-	filter := bson.M{}
-
-	if v, ok := data["email"].(string); ok && v != "" {
-		filter["email"] = v
-	}
-	if v, ok := data["phoneNo"].(string); ok && v != "" {
-		filter["phoneNo"] = v
-	}
-	if v, ok := data["code"].(string); ok && v != "" {
-		filter["code"] = v
-	}
-
-	return filter
-}
-
-/*
-* Pass the fiter and find which document gets matches with the filter
- */
-func fetchSuperAdmin(ctx context.Context, filter bson.M) (map[string]interface{}, error) {
-	collection := db.OpenCollections("superAdmin")
-	result := make(map[string]interface{})
-
-	err := db.FindOne(ctx, collection, filter, &result)
-	if err != nil {
-		log.Println("Error from the findOne")
-		return nil, err
-	}
-
-	return result, nil
-}
-
-/*
-* If match found then compare the input password and then the password found from the filtered document
- */
-func verifyPassword(dbPassword string, inputPassword string) error {
-	if strings.TrimSpace(dbPassword) == "" {
-		return errors.New("stored password missing or invalid")
-	}
-
-	if dbPassword != inputPassword {
-		return errors.New("Password mismatch")
-	}
-
-	return nil
-}
-
-/*
-* Pass the token
-* And update the document with the token generated
- */
-func updateSuperAdminToken(ctx context.Context, roleCode string, token string) error {
-	collection := db.OpenCollections("superAdmin")
-
-	filter := bson.M{"roleCode": roleCode}
-	update := bson.M{"$set": bson.M{"token": token}}
-
-	_, err := db.UpdateOne(ctx, collection, filter, update)
-	return err
-}
-
-/*
-* Validate super admin inputs first
-* Build the filter to find the document
-* Fetch superAdmin
-* Verify Password
-* GenerateJWT
-* UpdateToken
- */
-func SuperAdminLogin(c *gin.Context, data map[string]interface{}) (string, error) {
-
-	if err := validateSuperAdminLoginInput(data); err != nil {
-		return "", err
-	}
-
-	filter := buildSuperAdminFilter(data)
-
-	result, err := fetchSuperAdmin(context.Background(), filter)
-	if err != nil {
-		log.Println("error from the findOne function:", err)
-		return "", err
-	}
-
-	dbPassword := result["password"].(string)
-	inputPassword := data["password"].(string)
-
-	if err := verifyPassword(dbPassword, inputPassword); err != nil {
-		log.Println("Error from the verifyPassword")
-		return "", err
-	}
-
-	resCode := result["code"].(string)
-	resEmail := result["email"].(string)
-	roleCode := result["roleCode"].(string)
-
-	token, err := jwt.GenerateJWT(resCode, resEmail, roleCode, "superAdmin")
-	if err != nil {
-		log.Println("Unable to generate JWT")
-		return "", err
-	}
-
-	if err := updateSuperAdminToken(context.Background(), roleCode, token); err != nil {
-		log.Println("Error while Updating the token")
-		return "", err
-	}
-	return "login successful", nil
 }

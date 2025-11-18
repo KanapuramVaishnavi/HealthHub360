@@ -16,6 +16,7 @@ type Tenant struct {
 	Password  string             `json:"password,omitempty" bson:"password"`
 	Token     string             `json:"token,omitempty" bson:"token"`
 	IsActive  bool               `json:"isActive" bson:"isActive"`
+	Reset     bool               `json:"reset" bson:"reset"`
 	CreatedAt time.Time          `json:"createdAt" bson:"createdAt"`
 	CreatedBy string             `json:"createdBy" bson:"createdBy"`
 	UpdatedAt time.Time          `json:"updatedAt" bson:"updatedAt"`

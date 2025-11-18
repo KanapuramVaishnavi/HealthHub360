@@ -39,7 +39,7 @@ func GenerateEmpCode(collName string) (string, error) {
 	// Define prefix and number width for each collection
 	var prefix string
 	width := 4 // e.g. T0001 → 4 digits
-	var sortField string = "roleCode"
+	var sortField string = "code"
 	switch collName {
 	case "tenant", "tenants":
 		prefix = "T"
@@ -68,12 +68,12 @@ func GenerateEmpCode(collName string) (string, error) {
 		}
 		return "", err
 	}
-
 	// Extract last code
 	codeVal, ok := lastDoc[sortField].(string)
 	if !ok || codeVal == "" {
 		return fmt.Sprintf("%s%0*d", prefix, width, 1), nil
 	}
+	log.Println("code", codeVal)
 
 	// Extract numeric part (e.g., T0005 → 5)
 	re := regexp.MustCompile(`(\d+)$`)
