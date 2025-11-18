@@ -24,19 +24,26 @@ takes the name,id,email as input and gets stored in the claims
 Storage in the  JWT token
 */
 func GenerateJWT(code, email, roleCode, collectionName string) (string, error) {
-	expMinutesStr := os.Getenv("JWT_EXP_MINUTES")
-	expMinutes, err := strconv.Atoi(expMinutesStr)
-	if err != nil || expMinutes <= 0 {
-		expMinutes = 60
+	// expMinutesStr := os.Getenv("JWT_EXP_MINUTES")
+	// expMinutes, err := strconv.Atoi(expMinutesStr)
+	// if err != nil || expMinutes <= 0 {
+	// 	expMinutes = 60
+	// }
+	// expHours := time.Duration(expMinutes) * time.Minute
+	expDaysStr := os.Getenv("JWT_EXP_DAYS")
+	expDays, err := strconv.Atoi(expDaysStr)
+	if err != nil || expDays <= 0 {
+		expDays = 1 // default to 1 day
 	}
-	expHours := time.Duration(expMinutes) * time.Minute
+
+	expDuration := time.Duration(expDays) * 24 * time.Hour
 	claims := &JWTClaim{
 		Code:       code,
 		Email:      email,
 		RoleCode:   roleCode,
 		Collection: collectionName,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expHours)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expDuration)),
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

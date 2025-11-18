@@ -90,12 +90,10 @@ func CreateMany(c context.Context, collection *mongo.Collection, documents []int
 * Return error
  */
 func FindOne(ctx context.Context, collection *mongo.Collection, filter interface{}, result interface{}) error {
-
 	ctxTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	SingleResult := collection.FindOne(ctxTimeout, filter)
 	if err := SingleResult.Err(); err != nil {
-		log.Println("error from the findOne function")
 		if err == mongo.ErrNoDocuments {
 			return errors.New(util.ERR_NO_DOC_FOUND)
 		}
@@ -108,30 +106,64 @@ func FindOne(ctx context.Context, collection *mongo.Collection, filter interface
 	return nil
 }
 
+// /*
+// * To findAll inside the particular db collection
+// * Pass each document into the list of interface
+// * Check if the document present or not and then Decode and pass to the results
+//  */
+
+// func FindAll(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOptions, results []interface{}) error {
+
+// 	if filter == nil {
+// 		filter = bson.M{}
+// 	}
+// 	cursor, err := collection.Find(c, filter, opts)
+// 	if cursor.Next(c) {
+// 		doc := make(map[string]interface{})
+// 		if err := cursor.Decode(&doc); err != nil {
+// 			log.Println("Error decoding document:", err)
+// 			return err
+// 		}
+// 		results = append(results, doc)
+// 	}
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
 /*
 * To findAll inside the particular db collection
 * Pass each document into the list of interface
 * Check if the document present or not and then Decode and pass to the results
  */
 
-func FindAll(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOptions, results []interface{}) error {
-
+func FindAll(c context.Context, collection *mongo.Collection, filter interface{}, opts *options.FindOptions) ([]interface{}, error) {
 	if filter == nil {
 		filter = bson.M{}
 	}
+
 	cursor, err := collection.Find(c, filter, opts)
-	if cursor.Next(c) {
+	if err != nil {
+		return nil, err
+	}
+
+	defer cursor.Close(c)
+
+	var results []interface{}
+
+	for cursor.Next(c) {
 		doc := make(map[string]interface{})
 		if err := cursor.Decode(&doc); err != nil {
-			log.Println("Error decoding document:", err)
-			return err
+			return nil, err
 		}
 		results = append(results, doc)
 	}
-	if err != nil {
-		return err
+
+	if err := cursor.Err(); err != nil {
+		return nil, err
 	}
-	return nil
+
+	return results, nil
 }
 
 /*
@@ -190,12 +222,12 @@ func DeleteMany(ctx context.Context, collection *mongo.Collection, filter interf
 * Else return the updated count
  */
 func UpdateOne(ctx context.Context, collection *mongo.Collection, filter interface{}, update interface{}) (*mongo.UpdateResult, error) {
-	count, err := collection.UpdateOne(ctx, filter, update)
+	result, err := collection.UpdateOne(ctx, filter, update)
 	if err != nil {
-		log.Println("Error while updating the document")
+		log.Println("MongoDB UpdateOne error:", err)
 		return nil, errors.New(util.ERR_WHILE_UPDATING)
 	}
-	return count, nil
+	return result, nil
 }
 
 /*

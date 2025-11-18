@@ -110,13 +110,6 @@ func JWTAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if claims.Collection == "tenant" {
-			if err := verifyTenantExists(claims.RoleCode); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				c.Abort()
-				return
-			}
-		}
 		if claims.Collection != "tenant" {
 			if err := verifyUserExists(claims.Collection, claims.Code); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
