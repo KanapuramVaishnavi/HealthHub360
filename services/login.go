@@ -3,14 +3,13 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/jwt"
-	"HealthHub360/config/redis"
 	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -128,21 +127,30 @@ func verifyPassword(dbPassword string, inputPassword string) error {
 * Increment the count for the key
 * Set key value for 10mins
  */
+// func IncrementLoginAttempts(code string) (int, error) {
+// 	key := "LOGIN_FAIL:" + code
 
-func IncrementLoginAttempts(code string) (int, error) {
-	key := "LOGIN_FAIL:" + code
+// 	attempts, err := redis.Rdb.Incr(context.Background(), key).Result()
+// 	if err != nil {
+// 		log.Println("Unable to increment login count")
+// 		return 0, err
+// 	}
 
-	attempts, err := redis.Rdb.Incr(context.Background(), key).Result()
-	if err != nil {
-		log.Println("Unable to increment the key login count")
-		return 0, err
-	}
+//		log.Println("Current attempts:", attempts)
+//		return int(attempts), nil
+//	}
+var loginAttempts = make(map[string]int)
+var mu sync.Mutex
 
-	if attempts == 1 {
-		redis.Rdb.Expire(context.Background(), key, 10*time.Minute)
-	}
+func IncrementLoginAttempts(code string) int {
+	mu.Lock()
+	defer mu.Unlock()
 
-	return int(attempts), nil
+	loginAttempts[code]++
+	attempts := loginAttempts[code]
+
+	log.Println("Current attempts for", code, ":", attempts)
+	return attempts
 }
 
 /*
@@ -191,7 +199,7 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 
 	passErr := verifyPassword(dbPassword, inputPassword)
 	if passErr != nil {
-		attempts, _ := IncrementLoginAttempts(code)
+		attempts := IncrementLoginAttempts(code)
 		if attempts >= 3 {
 			// Disable account in MongoDB
 			_, _ = db.UpdateOne(context.Background(),
