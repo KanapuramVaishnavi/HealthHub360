@@ -8,8 +8,7 @@ import (
 
 func Routes(r *gin.Engine) {
 	controllers.Role(r)
-	controllers.Login(r)
-	controllers.ResetPassword(r)
+	controllers.Auth(r)
 	controllers.SuperAdmin(r)
 	controllers.Tenant(r)
 }

@@ -16,6 +16,7 @@ var (
 	ROLE_NAME_NOT_PROVIDED                string = "RoleName not provided"
 	ROLE_NAME_ALREADY_EXISTS              string = "Role name already exists in db"
 	PLEASE_PROVIDE_EMAIL_OR_PHONE_OR_CODE string = "please provide email or phoneNo or Code"
+	PLEASE_PROVIDE_EMAIL_OR_PHONE         string = "please provide email or phoneNo"
 	EMAIL_NOT_PROVIDED                    string = "Email not provided"
 	PHONE_NUMBER_NOT_PROVIDED             string = "Phone number not provided"
 	CODE_NOT_PROVIDED                     string = "Code not provided"
