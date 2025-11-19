@@ -75,8 +75,8 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateTenant(c *gin.Context, tenant map[string]interface{}) error {
 	name, nameErr := tenant["name"].(string)
-	email, _ := tenant["email"].(string)
-	phoneNo, _ := tenant["phoneNo"].(string)
+	Email, _ := tenant["email"].(string)
+	PhoneNo, _ := tenant["phoneNo"].(string)
 	userCode, codeErr := c.Get("code")
 	if !codeErr {
 		return errors.New("Invalid code")
@@ -86,7 +86,7 @@ func CreateTenant(c *gin.Context, tenant map[string]interface{}) error {
 		return errors.New("Provide the Name")
 	}
 	role := "tenant"
-	err := Checker(email, phoneNo, role, CreatedBy)
+	email, phoneNo, err := Checker(Email, PhoneNo, role, CreatedBy)
 	if err != nil {
 		return err
 	}

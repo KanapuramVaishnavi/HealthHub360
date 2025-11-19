@@ -101,6 +101,22 @@ func IsPhoneNumberExists(collName string, phone string) (bool, error) {
 	}
 	return count > 0, nil
 }
+func getTrimmedString(data map[string]interface{}, key string) error {
+	raw, exists := data[key]
+	if !exists {
+		return errors.New("missing field" + key)
+	}
+	v, ok := raw.(string)
+	if !ok {
+		return errors.New("invalid type" + key)
+	}
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return errors.New("empty value" + key)
+	}
+	data[key] = trimmed
+	return nil
+}
 
 /*
 Here It Verify Whether the Email is present in The Database.
@@ -291,51 +307,51 @@ Checker validates email and phone number formats.
 It also checks the database to ensure both fields do not already exist.
 Returns an error if any validation rule fails.
 */
-func Checker(Email string, Phone string, role string, code string) error {
+func Checker(Email string, Phone string, role string, code string) (string, string, error) {
 	if Phone == "" {
-		return errors.New("Missing Phone Field")
+		return "", "", errors.New("Missing Phone Field")
 	}
 	if Email == "" {
-		return errors.New("Missing Email Field")
+		return "", "", errors.New("Missing Email Field")
 	}
 	email := NormalizeEmail(Email)
 	if email == "" {
-		return errors.New(util.EMAIL_NOT_VALID)
+		return "", "", errors.New(util.EMAIL_NOT_VALID)
 	}
 	emailsCount, emailError := IsEmailExists(role, Email)
 	if emailError != nil {
-		return emailError
+		return "", "", emailError
 	}
 	if emailsCount == true {
 		log.Println("Email Exists triggered")
-		return errors.New(util.USER_EXISTING_EMAIL)
+		return "", "", errors.New(util.USER_EXISTING_EMAIL)
 	}
 	modifiedPhoneNumber := NormalizePhoneNumber(Phone)
 	if modifiedPhoneNumber == "" {
-		return errors.New(util.PHONENUMBER_NOT_VALID)
+		return "", "", errors.New(util.PHONENUMBER_NOT_VALID)
 	}
 	Phone = modifiedPhoneNumber
 	check := IsPhoneNumberValid(Phone)
 	if check == false {
-		return errors.New(util.PHONE_NUMBER_VALIDATION)
+		return "", "", errors.New(util.PHONE_NUMBER_VALIDATION)
 	}
 	phoneNumbersCount, phoneNumberError := IsPhoneNumberExists(role, Phone)
 	if phoneNumberError != nil {
-		return phoneNumberError
+		return "", "", phoneNumberError
 	}
 	if phoneNumbersCount == true {
 		log.Println("IsPhone Number Triggered")
-		return errors.New(util.USER_EXISTING_PHONE)
+		return "", "", errors.New(util.USER_EXISTING_PHONE)
 	}
 	if code != "" {
 		codeCount, codeError := IscodeExists(role, code)
 		if codeError != nil {
-			return phoneNumberError
+			return "", "", phoneNumberError
 		}
 		if codeCount == true {
 			log.Println("IsPhone Number Triggered")
-			return errors.New(util.USER_EXISTING_PHONE)
+			return "", "", errors.New(util.USER_EXISTING_PHONE)
 		}
 	}
-	return nil
+	return email, Phone, nil
 }
