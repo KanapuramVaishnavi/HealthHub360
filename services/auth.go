@@ -62,7 +62,7 @@ func validateLoginInput(data map[string]interface{}) error {
 /*
 * Create Filter to find the document in db
  */
-func buildSuperAdminFilter(data map[string]interface{}) bson.M {
+func buildLoginFilter(data map[string]interface{}) bson.M {
 	filter := bson.M{}
 
 	if v, ok := data["email"].(string); ok && v != "" {
@@ -213,7 +213,7 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 		return "", err
 	}
 
-	filter := buildSuperAdminFilter(data)
+	filter := buildLoginFilter(data)
 
 	loginDoc, err := FetchUser(context.Background(), filter)
 	if err != nil {
