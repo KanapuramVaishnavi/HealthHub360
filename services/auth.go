@@ -18,23 +18,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func getTrimmedString(data map[string]interface{}, key string) error {
-	raw, exists := data[key]
-	if !exists {
-		return errors.New("missing field" + key)
-	}
-	v, ok := raw.(string)
-	if !ok {
-		return errors.New("invalid type" + key)
-	}
-	trimmed := strings.TrimSpace(v)
-	if trimmed == "" {
-		return errors.New("empty value" + key)
-	}
-	data[key] = trimmed
-	return nil
-}
-
 /*
 * Check is the emailExists,phoneExists,codeExists or not
 * If non of these three exists then throw error
