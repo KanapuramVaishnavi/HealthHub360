@@ -93,13 +93,14 @@ prepares the data, and inserts the record into MongoDB.
 func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 
 	name, _ := input["name"].(string)
-	email, _ := input["email"].(string)
-	phoneNo, _ := input["phoneNo"].(string)
+	Email, _ := input["email"].(string)
+	PhoneNo, _ := input["phoneNo"].(string)
 	role := "superAdmin"
-	err := Checker(email, phoneNo, role, "")
+	email, phoneNo, err := Checker(Email, PhoneNo, role, "")
 	if err != nil {
 		return err
 	}
+	log.Println(email)
 	collection := db.OpenCollections("superAdmin")
 
 	docs, err := db.FindAll(ctx, collection, bson.M{}, nil)

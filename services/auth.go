@@ -18,18 +18,30 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func getTrimmedString(data map[string]interface{}, key string) error {
+	raw, exists := data[key]
+	if !exists {
+		return errors.New("missing field" + key)
+	}
+	v, ok := raw.(string)
+	if !ok {
+		return errors.New("invalid type" + key)
+	}
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return errors.New("empty value" + key)
+	}
+	data[key] = trimmed
+	return nil
+}
+
 /*
 * Check is the emailExists,phoneExists,codeExists or not
 * If non of these three exists then throw error
 * If any of the field provided and the value is empty or type assertion then throw error
  */
+
 func validateLoginInput(data map[string]interface{}) error {
-	password, passExists := data["password"]
-
-	if !passExists || strings.TrimSpace(password.(string)) == "" {
-		return errors.New(util.PASSWORD_NOT_PROVIDED)
-	}
-
 	_, emailExists := data["email"]
 	_, phoneExists := data["phoneNo"]
 	_, codeExists := data["code"]
@@ -37,25 +49,35 @@ func validateLoginInput(data map[string]interface{}) error {
 	if !emailExists && !phoneExists && !codeExists {
 		return errors.New(util.PLEASE_PROVIDE_EMAIL_OR_PHONE_OR_CODE)
 	}
-
+	_, passwordExists := data["password"]
+	if !passwordExists {
+		return errors.New(util.PASSWORD_NOT_PROVIDED)
+	}
+	if passwordExists {
+		err := getTrimmedString(data, "password")
+		if err != nil {
+			log.Println("error from getTrimmed string", err)
+			return errors.New(util.PASSWORD_NOT_PROVIDED)
+		}
+	}
 	if emailExists {
-		if v, ok := data["email"].(string); !ok || strings.TrimSpace(v) == "" {
+		err := getTrimmedString(data, "email")
+		if err != nil {
 			return errors.New(util.EMAIL_NOT_PROVIDED)
 		}
 	}
-
 	if phoneExists {
-		if v, ok := data["phoneNo"].(string); !ok || strings.TrimSpace(v) == "" {
+		err := getTrimmedString(data, "phoneNo")
+		if err != nil {
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
 		}
 	}
-
 	if codeExists {
-		if v, ok := data["code"].(string); !ok || strings.TrimSpace(v) == "" {
+		err := getTrimmedString(data, "code")
+		if err != nil {
 			return errors.New(util.CODE_NOT_PROVIDED)
 		}
 	}
-
 	return nil
 }
 
@@ -233,8 +255,10 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from FetchUserByRole", err)
 		return "", err
 	}
-	if err := ValidateOTPExpiry(userDoc); err != nil {
-		return "", err
+	if userDoc["reset"] == true {
+		if err := ValidateOTPExpiry(userDoc); err != nil {
+			return "", err
+		}
 	}
 	passErr := verifyPassword(dbPassword, inputPassword)
 	if passErr != nil {
@@ -299,26 +323,28 @@ func ExtractTokenInfo(c *gin.Context) (collection string, code string, err error
 * Validate input field
  */
 func ValidatePasswordInput(body map[string]interface{}) (string, string, error) {
-	newPasswordRaw, npExists := body["newPassword"]
-	confirmPasswordRaw, cpExists := body["confirmPassword"]
+	_, npExists := body["newPassword"]
+	_, cpExists := body["confirmPassword"]
 
 	if !npExists || !cpExists {
 		return "", "", errors.New("newPassword and confirmPassword are required")
 	}
 
-	newPassword, ok := newPasswordRaw.(string)
-	if !ok || strings.TrimSpace(newPassword) == "" {
+	err := getTrimmedString(body, "newPassword")
+	if err != nil {
 		return "", "", errors.New("invalid newPassword")
 	}
-	confirmPassword, ok := confirmPasswordRaw.(string)
-	if !ok || strings.TrimSpace(confirmPassword) == "" {
-		return "", "", errors.New("invalid confirmPassword")
+	err = getTrimmedString(body, "confirmPassword")
+	if err != nil {
+		return "", "", errors.New("invalid newPassword")
 	}
-
+	newPassword := body["newPassword"].(string)
+	confirmPassword := body["confirmPassword"].(string)
 	if newPassword != confirmPassword {
 		return "", "", errors.New("newPassword and confirmPassword do not match")
 	}
-
+	log.Println(newPassword)
+	log.Println(confirmPassword)
 	return newPassword, confirmPassword, nil
 }
 
