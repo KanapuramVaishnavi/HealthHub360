@@ -143,6 +143,8 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	log.Println(string(hashedOTP))
 
 	input["password"] = string(hashedOTP)
+	expiry := time.Now().Add(10 * time.Minute)
+	input["otpExpiry"] = expiry
 	superadmin := db.OpenCollections(role)
 	res, err := db.CreateOne(context.Background(), superadmin, input)
 	if err != nil {
