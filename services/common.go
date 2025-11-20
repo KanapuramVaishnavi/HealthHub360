@@ -41,13 +41,13 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
-	case "tenant", "tenants":
+	case "TENANT", "tenants":
 		prefix = "T"
 	case "patient", "patients":
 		prefix = "P"
 	case "doctors", "doctor":
 		prefix = "D"
-	case "superAdmin":
+	case "SUPERADMIN":
 		prefix = "S"
 	case "Role", "role":
 		prefix = "R"
@@ -104,15 +104,15 @@ func IsPhoneNumberExists(collName string, phone string) (bool, error) {
 func getTrimmedString(data map[string]interface{}, key string) error {
 	raw, exists := data[key]
 	if !exists {
-		return errors.New("missing field" + key)
+		return fmt.Errorf("%s missing field", key)
 	}
 	v, ok := raw.(string)
 	if !ok {
-		return errors.New("invalid type" + key)
+		return fmt.Errorf("%s invalid type", key)
 	}
 	trimmed := strings.TrimSpace(v)
 	if trimmed == "" {
-		return errors.New("empty value" + key)
+		return fmt.Errorf("%s key has empty value", key)
 	}
 	data[key] = trimmed
 	return nil
@@ -136,11 +136,7 @@ function for normalizing the Email
 */
 func NormalizeEmail(email string) string {
 	loweredEmail := strings.ToLower(email)
-	trimmedEmail := strings.TrimSpace(loweredEmail)
-	if strings.Contains(trimmedEmail, " ") {
-		return ""
-	}
-	return trimmedEmail
+	return loweredEmail
 }
 
 /*
@@ -307,51 +303,35 @@ Checker validates email and phone number formats.
 It also checks the database to ensure both fields do not already exist.
 Returns an error if any validation rule fails.
 */
-func Checker(Email string, Phone string, role string, code string) (string, string, error) {
-	if Phone == "" {
-		return "", "", errors.New("Missing Phone Field")
-	}
-	if Email == "" {
-		return "", "", errors.New("Missing Email Field")
-	}
+func Checker(Email string, Phone string, collName string) error {
 	email := NormalizeEmail(Email)
 	if email == "" {
-		return "", "", errors.New(util.EMAIL_NOT_VALID)
+		return errors.New(util.EMAIL_NOT_VALID)
 	}
-	emailsCount, emailError := IsEmailExists(role, Email)
+	emailsCount, emailError := IsEmailExists(collName, Email)
 	if emailError != nil {
-		return "", "", emailError
+		return emailError
 	}
 	if emailsCount == true {
 		log.Println("Email Exists triggered")
-		return "", "", errors.New(util.USER_EXISTING_EMAIL)
+		return errors.New(util.USER_EXISTING_EMAIL)
 	}
 	modifiedPhoneNumber := NormalizePhoneNumber(Phone)
 	if modifiedPhoneNumber == "" {
-		return "", "", errors.New(util.PHONENUMBER_NOT_VALID)
+		return errors.New(util.PHONENUMBER_NOT_VALID)
 	}
 	Phone = modifiedPhoneNumber
 	check := IsPhoneNumberValid(Phone)
 	if check == false {
-		return "", "", errors.New(util.PHONE_NUMBER_VALIDATION)
+		return errors.New(util.PHONE_NUMBER_VALIDATION)
 	}
-	phoneNumbersCount, phoneNumberError := IsPhoneNumberExists(role, Phone)
+	phoneNumbersCount, phoneNumberError := IsPhoneNumberExists(collName, Phone)
 	if phoneNumberError != nil {
-		return "", "", phoneNumberError
+		return phoneNumberError
 	}
 	if phoneNumbersCount == true {
 		log.Println("IsPhone Number Triggered")
-		return "", "", errors.New(util.USER_EXISTING_PHONE)
+		return errors.New(util.USER_EXISTING_PHONE)
 	}
-	if code != "" {
-		codeCount, codeError := IscodeExists(role, code)
-		if codeError != nil {
-			return "", "", phoneNumberError
-		}
-		if codeCount == true {
-			log.Println("IsPhone Number Triggered")
-			return "", "", errors.New(util.USER_EXISTING_PHONE)
-		}
-	}
-	return email, Phone, nil
+	return nil
 }

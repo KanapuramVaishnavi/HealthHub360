@@ -3,6 +3,7 @@ package controllers
 import (
 	"HealthHub360/config/authorization"
 	"HealthHub360/services"
+	"HealthHub360/util"
 	"log"
 	"net/http"
 
@@ -23,24 +24,15 @@ func Auth(router *gin.Engine) {
 func Login(c *gin.Context) {
 	var data map[string]interface{}
 	if err := c.BindJSON(&data); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status": "Error",
-			"error":  "Invalid JSON body",
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 	msg, err := services.Login(c, data)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status": "error",
-			"error":  err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": msg,
-	})
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
 }
 
 /*
@@ -51,27 +43,18 @@ func ResetPassword(c *gin.Context) {
 	var body map[string]interface{}
 
 	if err := c.BindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": "Invalid request body",
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
 	msg, err := services.ResetPassword(c, body)
 	if err != nil {
 		log.Println("ResetPasswordGeneric error:", err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": msg,
-	})
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
 }
 
 /*
@@ -83,24 +66,15 @@ func ForgotPassword(c *gin.Context) {
 	var req map[string]interface{}
 
 	if err := c.BindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status": "error",
-			"error":  "Invalid request format",
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
 	msg, err := services.ForgotPassword(c, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"status": "error",
-			"error":  err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": msg,
-	})
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
 }

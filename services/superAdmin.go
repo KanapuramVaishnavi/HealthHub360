@@ -76,9 +76,11 @@ func PrepareSuperAdmin(input map[string]interface{}, name string, email string, 
 	input["_id"] = primitive.NewObjectID()
 	input["code"] = code
 	input["roleCode"] = roleCode
+	input["loginAttempts"] = 0
 	input["token"] = ""
 	input["reset"] = true
-	input["isActive"] = true
+	input["isBlocked"] = false
+	input["isActive"] = false
 	input["createdAt"] = time.Now()
 	input["updatedAt"] = time.Now()
 
@@ -92,18 +94,48 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 
-	name, _ := input["name"].(string)
-	Email, _ := input["email"].(string)
-	PhoneNo, _ := input["phoneNo"].(string)
-	role := "superAdmin"
-	email, phoneNo, err := Checker(Email, PhoneNo, role, "")
+	err := getTrimmedString(input, "name")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.NAME_NOT_PROVIDED)
+	}
+	err = getTrimmedString(input, "email")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.EMAIL_NOT_PROVIDED)
+	}
+	err = getTrimmedString(input, "phoneNo")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
+	}
+	err = getTrimmedString(input, "dob")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.DOB_NOT_PROVIDED)
+	}
+	err = getTrimmedString(input, "roleCode")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.ROLE_CODE_KEY_NOT_FOUND)
+	}
+	roleDoc, err := FetchRoleById(c, input["roleCode"].(string))
+	if err != nil {
+		log.Println("Error from FetchRoleByID", err)
+		return err
+	}
+	collection := roleDoc["roleName"].(string)
+	name := input["name"].(string)
+	email := input["email"].(string)
+	phoneNo := input["phoneNo"].(string)
+	roleCode := input["roleCode"].(string)
+	err = Checker(email, phoneNo, collection)
 	if err != nil {
 		return err
 	}
-	log.Println(email)
-	collection := db.OpenCollections("superAdmin")
+	superCollection := db.OpenCollections(collection)
 
-	docs, err := db.FindAll(ctx, collection, bson.M{}, nil)
+	docs, err := db.FindAll(ctx, superCollection, bson.M{}, nil)
 	if err != nil {
 		return err
 	}
@@ -112,26 +144,11 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 		return errors.New("SuperAdmin already exists")
 	}
 
-	code, err := GenerateEmpCode(role)
+	code, err := GenerateEmpCode(collection)
 	if err != nil {
 		return err
 	}
 
-	roleCollection := db.OpenCollections("role")
-	log.Println(roleCollection)
-	roleDoc := make(map[string]interface{})
-	filter := bson.M{
-		"roleName": "SUPERADMIN",
-	}
-	err = db.FindOne(context.Background(), roleCollection, filter, roleDoc)
-	if err != nil {
-		return fmt.Errorf("failed to find SuperAdmin role: %v", err)
-	}
-
-	roleCode, ok := roleDoc["roleCode"].(string)
-	if !ok {
-		return errors.New("invalid roleCode type in role collection")
-	}
 	if err := PrepareSuperAdmin(input, name, email, code, roleCode); err != nil {
 		return err
 	}
@@ -146,13 +163,12 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	input["password"] = string(hashedOTP)
 	expiry := time.Now().Add(10 * time.Minute)
 	input["otpExpiry"] = expiry
-	superadmin := db.OpenCollections(role)
-	res, err := db.CreateOne(context.Background(), superadmin, input)
+	res, err := db.CreateOne(context.Background(), superCollection, input)
 	if err != nil {
 		return err
 	}
 	log.Println(res.InsertedID)
-	err = CreateLoginRecord(c, role, code, email, phoneNo, string(hashedOTP))
+	err = CreateLoginRecord(c, collection, code, email, phoneNo, string(hashedOTP))
 	if err != nil {
 		log.Println("Error from the createLoginRecord")
 		return err
