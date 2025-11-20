@@ -22,33 +22,40 @@ prepares the data, and inserts the record into MongoDB.
 func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 
 	if err := ValidateUserInput(data); err != nil {
+		log.Println("Error from validateUserInput:", err)
 		return err
 	}
 	roleDoc, collection, err := FetchRoleDocAndCollection(c, data["roleCode"].(string))
 	if err != nil {
+		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return err
 	}
 	code, CreatedBy, err := GenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
+		log.Println("Error from GenerateUserRole", err)
 		return err
 	}
-
 	otp, err := GenerateAndHashOTP(data)
 	if err != nil {
+		log.Println("Error from GenerateAndHashOTP", err)
 		return err
 	}
 	log.Println("otp:", otp)
 
 	if err := PrepareUser(data, code, CreatedBy); err != nil {
+		log.Println("Error from PrepareUser", err)
 		return err
 	}
 	if err := CacheUserInRedis(c, code, data, roleDoc["collection"].(string)); err != nil {
+		log.Println("Error from the CacheUserInRedis", err)
 		return err
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
 	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+		log.Println("Error from the createLoginRecord", err)
 		return err
 	}
 
