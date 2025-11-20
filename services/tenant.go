@@ -25,12 +25,12 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from validateUserInput:", err)
 		return err
 	}
-	roleDoc, collection, err := FetchRoleDocAndCollection(c, data["roleCode"].(string))
+	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return err
 	}
-	code, CreatedBy, err := GenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+	code, CreatedBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserRole", err)
 		return err
@@ -46,7 +46,7 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
-	if err := CacheUserInRedis(c, code, data, roleDoc["collection"].(string)); err != nil {
+	if err := CacheUserInRedis(c, code, data, collection); err != nil {
 		log.Println("Error from the CacheUserInRedis", err)
 		return err
 	}

@@ -52,8 +52,9 @@ func GenerateEmpCode(collName string) (string, error) {
 		prefix = "D"
 	case "SUPERADMIN":
 		prefix = "S"
-	case "Role", "role":
+	case "ROLE", "role":
 		prefix = "R"
+		sortField = "roleCode"
 	default:
 		return "", fmt.Errorf("unsupported collection: %s", collName)
 	}
@@ -72,6 +73,7 @@ func GenerateEmpCode(collName string) (string, error) {
 		return "", err
 	}
 	// Extract last code
+
 	codeVal, ok := lastDoc[sortField].(string)
 	if !ok || codeVal == "" {
 		return fmt.Sprintf("%s%0*d", prefix, width, 1), nil
@@ -343,24 +345,25 @@ func ValidateUserInput(data map[string]interface{}) error {
 	fields := []string{"name", "email", "phoneNo", "dob", "roleCode"}
 	for _, f := range fields {
 		if err := getTrimmedString(data, f); err != nil {
+			log.Println("Error from getTrimmedString:", err)
 			return err
 		}
 	}
 	return nil
 }
-func FetchRoleDocAndCollection(c *gin.Context, roleCode string) (map[string]interface{}, string, error) {
+func FetchCollectionFromRoleDoc(c *gin.Context, roleCode string) (string, error) {
 	roleDoc, err := FetchRoleById(c, roleCode)
 	if err != nil {
 		log.Println("Error from FetchRolebyId", err)
-		return nil, "", err
+		return "", err
 	}
 	collection, ok := roleDoc["roleName"].(string)
 	if !ok {
-		return nil, "", errors.New("invalid roleName")
+		return "", errors.New("invalid roleName")
 	}
-	return roleDoc, collection, nil
+	return collection, nil
 }
-func GenerateUserCodes(c *gin.Context, collection, email, phone string) (string, string, error) {
+func CheckerAndGenerateUserCodes(c *gin.Context, collection, email, phone string) (string, string, error) {
 
 	if err := Checker(email, phone, collection); err != nil {
 
@@ -443,7 +446,7 @@ func SaveUserToDB(collection string, data map[string]interface{}) (primitive.Obj
  */
 func CreateLoginRecord(ctx context.Context, role string, code string, email string, phone string, password string) error {
 
-	loginCollection := db.OpenCollections("login")
+	loginCollection := db.OpenCollections("LOGIN")
 	filter := bson.M{
 		"$or": []bson.M{
 			{"code": code},
