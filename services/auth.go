@@ -90,7 +90,7 @@ func buildLoginFilter(data map[string]interface{}) bson.M {
 * Pass the fiter and find which document gets matches with the filter
  */
 func FetchUser(ctx context.Context, filter bson.M) (map[string]interface{}, error) {
-	collection := db.OpenCollections("login")
+	collection := db.OpenCollections("LOGIN")
 	result := make(map[string]interface{})
 
 	err := db.FindOne(ctx, collection, filter, &result)
@@ -379,7 +379,7 @@ func UpdatePasswordInCollections(c *gin.Context, collectionName string, code str
 		return err
 	}
 
-	loginColl := db.OpenCollections("login")
+	loginColl := db.OpenCollections("LOGIN")
 	_, err = db.UpdateOne(c, loginColl, filter, bson.M{
 		"$set": bson.M{"password": hashedPassword},
 	})
