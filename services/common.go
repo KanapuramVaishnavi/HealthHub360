@@ -109,7 +109,9 @@ func IsPhoneNumberExists(collName string, phone string) (bool, error) {
 	return count > 0, nil
 }
 func getTrimmedString(data map[string]interface{}, key string) error {
+	log.Println(key)
 	raw, exists := data[key]
+	log.Println(raw)
 	if !exists {
 		return fmt.Errorf("%s missing field", key)
 	}

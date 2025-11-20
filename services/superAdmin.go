@@ -2,6 +2,7 @@ package services
 
 import (
 	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
+
+var collectionName string = "SUPERADMIN"
 
 /*
 PrepareSuperAdmin formats and validates SuperAdmin data.
@@ -101,8 +104,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	return nil
 }
 func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
-	collection := "SUPERADMIN"
-	coll := db.OpenCollections(collection)
+	coll := db.OpenCollections(collectionName)
 	data, err := db.FindAll(c, coll, bson.M{}, nil)
 	if err != nil {
 		return nil, err
@@ -110,6 +112,46 @@ func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
 	return data, nil
 }
 
+func UpdateSuperAdmin(c *gin.Context, update map[string]interface{}) error {
+	err := ValidateUserInput(update)
+	if err != nil {
+		log.Println("Error from ValidateUserInput:", err)
+		return err
+	}
+	updateFields, err := parseTenantUpdateFields(c, update)
+	if err != nil {
+		return err
+	}
+	doc, err := ReteriveDoc(c)
+	if err != nil {
+		return err
+	}
+	code := doc["code"].(string)
+	err = updateSuperAdminInDB(code, updateFields)
+	if err != nil {
+		return err
+	}
+	updatedDoc, err := ReteriveDoc(c)
+	if err != nil {
+		return err
+	}
+	refreshSuperAdminCache(c, code, updatedDoc)
+	return nil
+}
+func ReteriveDoc(c *gin.Context) (map[string]interface{}, error) {
+	docs, err := ReadSuperAdmin(c)
+	if err != nil {
+		return nil, err
+	}
+	if len(docs) == 0 {
+		return nil, errors.New("no superadmin found")
+	}
+	doc, ok := docs[0].(map[string]interface{})
+	if !ok {
+		return nil, errors.New("DOCUMNET NIOT FOUND")
+	}
+	return doc, nil
+}
 func DeleteSuperAdmin(c *gin.Context) error {
 
 	raw := os.Getenv("COLLECTIONS")
@@ -130,4 +172,43 @@ func DeleteSuperAdmin(c *gin.Context) error {
 	}
 
 	return nil
+}
+
+/*
+updateSuperAdminInDB applies the parsed updates to the SuperAdmin document in MongoDB.
+*/
+func updateSuperAdminInDB(code string, update bson.M) error {
+
+	collection := db.OpenCollections(collectionName)
+	filter := bson.M{"code": code}
+
+	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
+	if err != nil {
+		return fmt.Errorf("update failed: %v", err)
+	}
+
+	return nil
+}
+
+/*
+refreshTenantCache removes any old cache entry and stores the updated tenant data in Redis.
+Cache failures are logged but not returned as errors (non-blocking).
+*/
+func refreshSuperAdminCache(c *gin.Context, code string, data map[string]interface{}) {
+
+	key, err := redis.CreateCacheKey(collectionName, code)
+	if err != nil {
+		log.Println("Failed creating tenant cache key:", err)
+		return
+	}
+
+	// Delete old cache entry
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	// Set new cache entry
+	if err := redis.SetCache(c, key, data); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 }

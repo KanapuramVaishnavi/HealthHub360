@@ -12,7 +12,7 @@ func Hospital(router *gin.Engine) {
 	hospital := router.Group("/hospital", authorization.JWTAuth())
 	{
 		hospital.POST("/create", authorization.Authorize("hospital", "create"), HospitalCreate)
-		hospital.POST("/update/:code", authorization.Authorize("hospital", "update"), UpdateHospital)
+		hospital.PUT("/update/:code", authorization.Authorize("hospital", "update"), UpdateHospital)
 	}
 }
 func HospitalCreate(c *gin.Context) {

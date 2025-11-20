@@ -58,26 +58,31 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 	log.Println("mail sent successfully")
 	return nil
 }
-func BuildUpdateFilter(data map[string]interface{}) map[string]interface{} {
-	filter := bson.M{}
-	if v, ok := data["name"].(string); ok {
-		filter["name"] = v
-	}
-	if v, ok := data["email"].(string); ok {
-		filter["email"] = v
-	}
-	if v, ok := data["phoneNo"].(string); ok {
-		filter["phoneNo"] = v
-	}
-	if v, ok := data["dob"].(string); ok {
-		filter["dob"] = v
-	}
+func BuildUpdateFilter(data map[string]interface{}, createdBy string) map[string]interface{} {
+	// if v, ok := data["name"].(string); ok {
+	// 	filter["name"] = v
+	// }
+	// if v, ok := data["email"].(string); ok {
+	// 	filter["email"] = v
+	// }
+	// if v, ok := data["phoneNo"].(string); ok {
+	// 	filter["phoneNo"] = v
+	// }
+	// if v, ok := data["dob"].(string); ok {
+	// 	filter["dob"] = v
+	// }
+
+	data["createdBy"] = createdBy
+	data["updatedBy"] = createdBy
+	data["updatedAt"] = time.Now()
+	filter := bson.M{"$set": data}
 	return filter
 }
 func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) error {
-	name, nameExists := data["name"].(string)
+	_, nameExists := data["name"]
 	if nameExists {
-		err := getTrimmedString(data, name)
+		s := "name"
+		err := getTrimmedString(data, s)
 		if err != nil {
 			log.Println("Error from getTrimmedString", err)
 			return err
@@ -99,33 +104,30 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 			return err
 		}
 	}
-	dob, phoneExists := data["dob"].(string)
-	if phoneExists {
+	dob, dobExists := data["dob"].(string)
+	if dobExists {
 		err := getTrimmedString(data, dob)
 		if err != nil {
 			log.Println("Error from getTrimmedString", err)
 			return err
 		}
+		_, err = NormalizeDOB(data["dob"].(string))
+		if err != nil {
+			log.Println("Error from dobNormalize", err)
+			return err
+		}
+		data["dob"] = dob
 	}
-	_, err := NormalizeDOB(data["dob"].(string))
-	if err != nil {
-		log.Println("Error from dobNormalize", err)
-		return err
-	}
-	data["dob"] = dob
-	update := BuildUpdateFilter(data)
 	createdBy, ok := c.Get("code")
 	if !ok {
 		return errors.New("unable to fetch code from context")
 	}
-	collection := db.OpenCollections("HOSPITAL")
+	updateFilter := BuildUpdateFilter(data, createdBy.(string))
 	filter := bson.M{
-		"code":      code,
-		"createdBy": createdBy,
-		"updatedBy": createdBy,
-		"updatedAt": time.Now(),
+		"code": code,
 	}
-	res, err := db.UpdateOne(c, collection, filter, update)
+	collection := db.OpenCollections("HOSPITAL")
+	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
 		log.Println("Error from updateOne:", err)
 		return err

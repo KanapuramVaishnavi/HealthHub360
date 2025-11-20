@@ -15,7 +15,7 @@ func Tenant(router *gin.Engine) {
 	{
 		tenant.POST("/create", authorization.Authorize("tenant", "create"), CreateTenant)
 		tenant.GET("/fetchAll", authorization.Authorize("tenant", "view"), FetchAll)
-		tenant.POST("/update/:code", authorization.Authorize("tenant", "update"), UpdateTenant)
+		tenant.PUT("/update/:code", authorization.Authorize("tenant", "update"), UpdateTenant)
 		tenant.DELETE("/delete/:code", authorization.Authorize("Tenant", "delete"), DeleteTenantByCode)
 	}
 }
