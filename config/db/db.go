@@ -62,25 +62,25 @@ func OpenCollections(collectionName string) *mongo.Collection {
 * Return count,error
  */
 func CreateOne(c context.Context, collection *mongo.Collection, document interface{}) (*mongo.InsertOneResult, error) {
-	count, err := collection.InsertOne(c, document)
+	res, err := collection.InsertOne(c, document)
 	if err != nil {
 
 		log.Println("Error while inserting the document", err)
 		return nil, errors.New(util.ERR_WHILE_INSERTING)
 	}
-	return count, nil
+	return res, nil
 }
 
 /*
 * Create Many records with the collection given
  */
 func CreateMany(c context.Context, collection *mongo.Collection, documents []interface{}) (*mongo.InsertManyResult, error) {
-	count, err := collection.InsertMany(c, documents)
+	res, err := collection.InsertMany(c, documents)
 	if err != nil {
 		log.Println("Error while inserting the document", err)
 		return nil, errors.New(util.ERR_WHILE_INSERTING_MANY)
 	}
-	return count, nil
+	return res, nil
 }
 
 /*

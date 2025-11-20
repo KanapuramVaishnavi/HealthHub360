@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/models"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -342,7 +343,7 @@ func ValidateUserInput(data map[string]interface{}) error {
 	fields := []string{"name", "email", "phoneNo", "dob", "roleCode"}
 	for _, f := range fields {
 		if err := getTrimmedString(data, f); err != nil {
-			return fmt.Errorf("%s is missing", f)
+			return err
 		}
 	}
 	return nil
@@ -350,6 +351,7 @@ func ValidateUserInput(data map[string]interface{}) error {
 func FetchRoleDocAndCollection(c *gin.Context, roleCode string) (map[string]interface{}, string, error) {
 	roleDoc, err := FetchRoleById(c, roleCode)
 	if err != nil {
+		log.Println("Error from FetchRolebyId", err)
 		return nil, "", err
 	}
 	collection, ok := roleDoc["roleName"].(string)
@@ -361,16 +363,20 @@ func FetchRoleDocAndCollection(c *gin.Context, roleCode string) (map[string]inte
 func GenerateUserCodes(c *gin.Context, collection, email, phone string) (string, string, error) {
 
 	if err := Checker(email, phone, collection); err != nil {
+
+		log.Println("Error from checker function:", err)
 		return "", "", err
 	}
 
 	code, err := GenerateEmpCode(collection)
 	if err != nil {
+		log.Println("Error from GenerateEmpCode:", err)
 		return "", "", err
 	}
 
 	userCodeVal, exists := c.Get("code")
 	if !exists {
+		log.Println("Error unable to get the code from the context")
 		return "", "", errors.New("missing creator code")
 	}
 
@@ -386,33 +392,12 @@ func GenerateAndHashOTP(data map[string]interface{}) (string, error) {
 
 	hashedOTP, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if err != nil {
+		log.Println("Unable to bcrypt the otp")
 		return "", fmt.Errorf("failed to hash OTP: %v", err)
 	}
 	log.Println(string(hashedOTP))
 	data["password"] = string(hashedOTP)
 	return otp, nil
-}
-
-func SaveUserToDB(collection string, data map[string]interface{}) (primitive.ObjectID, error) {
-	coll := db.OpenCollections(collection)
-	res, err := db.CreateOne(context.Background(), coll, data)
-	if err != nil {
-		return primitive.NilObjectID, err
-	}
-	log.Println(res.InsertedID)
-	return res.InsertedID.(primitive.ObjectID), nil
-}
-
-func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, collection string) error {
-	key, keyErr := redis.CreateCacheKey(collection, code)
-	if keyErr != nil {
-		return keyErr
-	}
-	err := redis.SetCache(c, key, data)
-	if err != nil {
-		return errors.New("Error from setCache")
-	}
-	return err
 }
 
 /*
@@ -425,6 +410,7 @@ func PrepareUser(data map[string]interface{}, code string, CreatedBy string) err
 	dob, _ := data["dob"].(string)
 	modifiedDob, err := NormalizeDOB(dob)
 	if err != nil {
+		log.Println("Error from normalize function", err)
 		return err
 	}
 
@@ -439,5 +425,69 @@ func PrepareUser(data map[string]interface{}, code string, CreatedBy string) err
 	data["UpdatedBy"] = CreatedBy
 	data["createdAt"] = time.Now()
 	data["updatedAt"] = time.Now()
+	return nil
+}
+func SaveUserToDB(collection string, data map[string]interface{}) (primitive.ObjectID, error) {
+	coll := db.OpenCollections(collection)
+	res, err := db.CreateOne(context.Background(), coll, data)
+	if err != nil {
+		log.Println("Error from CreateOne function:", err)
+		return primitive.NilObjectID, err
+	}
+	log.Println(res.InsertedID)
+	return res.InsertedID.(primitive.ObjectID), nil
+}
+
+/*
+* Insert into the loginRecord
+ */
+func CreateLoginRecord(ctx context.Context, role string, code string, email string, phone string, password string) error {
+
+	loginCollection := db.OpenCollections("login")
+	filter := bson.M{
+		"$or": []bson.M{
+			{"code": code},
+			{"email": email},
+			{"phoneNo": phone},
+		},
+	}
+
+	var existing models.Login
+	err := db.FindOne(ctx, loginCollection, filter, &existing)
+	if err == nil {
+		log.Println("Error from findOne function", err)
+		return fmt.Errorf("login already exists with same code, email or phone")
+	}
+
+	if err.Error() == util.ERR_NO_DOC_FOUND {
+		login := models.Login{
+			Code:       code,
+			Collection: role,
+			Email:      email,
+			PhoneNo:    phone,
+			Password:   password,
+		}
+
+		_, err = db.CreateOne(ctx, loginCollection, login)
+		if err != nil {
+			return fmt.Errorf("failed to create login record: %v", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("findOne error: %v", err)
+}
+
+func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, collection string) error {
+	key, keyErr := redis.CreateCacheKey(collection, code)
+	if keyErr != nil {
+		log.Println("Unable to create key:", keyErr)
+		return keyErr
+	}
+	err := redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error from SetCache:", err)
+		return errors.New("Error from setCache")
+	}
 	return nil
 }

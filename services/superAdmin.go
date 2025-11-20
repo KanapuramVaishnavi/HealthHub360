@@ -3,7 +3,6 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
-	"HealthHub360/models"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -16,45 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"golang.org/x/crypto/bcrypt"
 )
-
-/*
-* Insert into the loginRecord
- */
-func CreateLoginRecord(ctx context.Context, role string, code string, email string, phone string, password string) error {
-
-	loginCollection := db.OpenCollections("login")
-	filter := bson.M{
-		"$or": []bson.M{
-			{"code": code},
-			{"email": email},
-			{"phoneNo": phone},
-		},
-	}
-
-	var existing models.Login
-	err := db.FindOne(ctx, loginCollection, filter, &existing)
-	if err == nil {
-		return fmt.Errorf("login already exists with same code, email or phone")
-	}
-
-	if err.Error() == util.ERR_NO_DOC_FOUND {
-		login := models.Login{
-			Code:       code,
-			Collection: role,
-			Email:      email,
-			PhoneNo:    phone,
-			Password:   password,
-		}
-
-		_, err = db.CreateOne(ctx, loginCollection, login)
-		if err != nil {
-			return fmt.Errorf("failed to create login record: %v", err)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("findOne error: %v", err)
-}
 
 /*
 PrepareSuperAdmin formats and validates SuperAdmin data.
