@@ -11,4 +11,5 @@ func Routes(r *gin.Engine) {
 	controllers.Auth(r)
 	controllers.SuperAdmin(r)
 	controllers.Tenant(r)
+	controllers.Hospital(r)
 }

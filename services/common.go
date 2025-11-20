@@ -50,6 +50,8 @@ func GenerateEmpCode(collName string) (string, error) {
 		prefix = "P"
 	case "doctors", "doctor":
 		prefix = "D"
+	case "HOSPITAL":
+		prefix = "H"
 	case "SUPERADMIN":
 		prefix = "S"
 	case "ROLE", "role":
@@ -376,7 +378,9 @@ func CheckerAndGenerateUserCodes(c *gin.Context, collection, email, phone string
 		log.Println("Error from GenerateEmpCode:", err)
 		return "", "", err
 	}
-
+	if collection == "SUPERADMIN" {
+		return code, "SYSTEM", nil
+	}
 	userCodeVal, exists := c.Get("code")
 	if !exists {
 		log.Println("Error unable to get the code from the context")
@@ -392,7 +396,7 @@ func GenerateAndHashOTP(data map[string]interface{}) (string, error) {
 	otp := GenerateOTP()
 	expiry := time.Now().Add(10 * time.Minute)
 	data["otpExpiry"] = expiry
-
+	log.Println(otp)
 	hashedOTP, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if err != nil {
 		log.Println("Unable to bcrypt the otp")
@@ -424,8 +428,8 @@ func PrepareUser(data map[string]interface{}, code string, CreatedBy string) err
 	data["reset"] = true
 	data["isActive"] = false
 	data["isBlocked"] = false
-	data["CreatedBy"] = CreatedBy
-	data["UpdatedBy"] = CreatedBy
+	data["createdBy"] = CreatedBy
+	data["updatedBy"] = CreatedBy
 	data["createdAt"] = time.Now()
 	data["updatedAt"] = time.Now()
 	return nil

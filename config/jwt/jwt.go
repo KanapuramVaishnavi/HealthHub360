@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -57,6 +58,7 @@ func ValidateToken(tokenString string) (*JWTClaim, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaim{}, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
+	log.Println(token)
 	if err != nil {
 		return nil, err
 	}
