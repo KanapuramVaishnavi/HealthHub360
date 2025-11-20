@@ -18,8 +18,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var tenantCollection *mongo.Collection
@@ -333,5 +335,109 @@ func Checker(Email string, Phone string, collName string) error {
 		log.Println("IsPhone Number Triggered")
 		return errors.New(util.USER_EXISTING_PHONE)
 	}
+	return nil
+}
+
+func ValidateUserInput(data map[string]interface{}) error {
+	fields := []string{"name", "email", "phoneNo", "dob", "roleCode"}
+	for _, f := range fields {
+		if err := getTrimmedString(data, f); err != nil {
+			return fmt.Errorf("%s is missing", f)
+		}
+	}
+	return nil
+}
+func FetchRoleDocAndCollection(c *gin.Context, roleCode string) (map[string]interface{}, string, error) {
+	roleDoc, err := FetchRoleById(c, roleCode)
+	if err != nil {
+		return nil, "", err
+	}
+	collection, ok := roleDoc["roleName"].(string)
+	if !ok {
+		return nil, "", errors.New("invalid roleName")
+	}
+	return roleDoc, collection, nil
+}
+func GenerateUserCodes(c *gin.Context, collection, email, phone string) (string, string, error) {
+
+	if err := Checker(email, phone, collection); err != nil {
+		return "", "", err
+	}
+
+	code, err := GenerateEmpCode(collection)
+	if err != nil {
+		return "", "", err
+	}
+
+	userCodeVal, exists := c.Get("code")
+	if !exists {
+		return "", "", errors.New("missing creator code")
+	}
+
+	CreatedBy := userCodeVal.(string)
+
+	return code, CreatedBy, nil
+}
+func GenerateAndHashOTP(data map[string]interface{}) (string, error) {
+
+	otp := GenerateOTP()
+	expiry := time.Now().Add(10 * time.Minute)
+	data["otpExpiry"] = expiry
+
+	hashedOTP, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash OTP: %v", err)
+	}
+	log.Println(string(hashedOTP))
+	data["password"] = string(hashedOTP)
+	return otp, nil
+}
+
+func SaveUserToDB(collection string, data map[string]interface{}) (primitive.ObjectID, error) {
+	coll := db.OpenCollections(collection)
+	res, err := db.CreateOne(context.Background(), coll, data)
+	if err != nil {
+		return primitive.NilObjectID, err
+	}
+	log.Println(res.InsertedID)
+	return res.InsertedID.(primitive.ObjectID), nil
+}
+
+func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, collection string) error {
+	key, keyErr := redis.CreateCacheKey(collection, code)
+	if keyErr != nil {
+		return keyErr
+	}
+	err := redis.SetCache(c, key, data)
+	if err != nil {
+		return errors.New("Error from setCache")
+	}
+	return err
+}
+
+/*
+PrepareTenant formats and validates Tenant data.
+Normalizes the DOB, sets default fields, and populates metadata like timestamps.
+Used before inserting the record in the database.
+*/
+func PrepareUser(data map[string]interface{}, code string, CreatedBy string) error {
+
+	dob, _ := data["dob"].(string)
+	modifiedDob, err := NormalizeDOB(dob)
+	if err != nil {
+		return err
+	}
+
+	data["_id"] = primitive.NewObjectID()
+	data["dob"] = modifiedDob
+	data["code"] = code
+	data["loginAttempts"] = 0
+	data["reset"] = true
+	data["isActive"] = false
+	data["isBlocked"] = false
+	data["CreatedBy"] = CreatedBy
+	data["UpdatedBy"] = CreatedBy
+	data["createdAt"] = time.Now()
+	data["updatedAt"] = time.Now()
 	return nil
 }
