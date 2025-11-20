@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"HealthHub360/config/authorization"
 	"HealthHub360/services"
 	"HealthHub360/util"
 
@@ -8,9 +9,11 @@ import (
 )
 
 func SuperAdmin(router *gin.Engine) {
-	tenant := router.Group("/superAdmin")
+	router.POST("/superAdmin/create", CreateSuperAdmin)
+	superAdmin := router.Group("/superAdmin", authorization.JWTAuth())
 	{
-		tenant.POST("/register", CreateSuperAdmin)
+		superAdmin.GET("/fetch", authorization.Authorize("superAdmin", "read"), ReadSuperAdmin)
+		superAdmin.DELETE("/delete", authorization.Authorize("superAdmin", "delete"), DeleteSuperAdmin)
 	}
 }
 
@@ -27,4 +30,23 @@ func CreateSuperAdmin(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(200, util.SuccessResponse("Created successfully"))
+}
+
+func ReadSuperAdmin(ctx *gin.Context) {
+	user, err := services.ReadSuperAdmin(ctx)
+	if err != nil {
+		ctx.JSON(400, util.FailedResponse(err))
+		return
+	}
+	ctx.JSON(200, util.SuccessResponse(user))
+}
+
+func DeleteSuperAdmin(ctx *gin.Context) {
+	err := services.DeleteSuperAdmin(ctx)
+	if err != nil {
+		ctx.JSON(400, util.FailedResponse(err))
+		return
+	}
+	ctx.JSON(200, util.SuccessResponse("Deleted successfully"))
+
 }

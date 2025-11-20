@@ -2,18 +2,17 @@ package services
 
 import (
 	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"golang.org/x/crypto/bcrypt"
 )
 
 /*
@@ -54,101 +53,81 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 
-	err := getTrimmedString(input, "name")
+	err := ValidateUserInput(input)
 	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.NAME_NOT_PROVIDED)
-	}
-	err = getTrimmedString(input, "email")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.EMAIL_NOT_PROVIDED)
-	}
-	err = getTrimmedString(input, "phoneNo")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
-	}
-	err = getTrimmedString(input, "dob")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.DOB_NOT_PROVIDED)
-	}
-	err = getTrimmedString(input, "roleCode")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.ROLE_CODE_KEY_NOT_FOUND)
-	}
-	roleDoc, err := FetchRoleById(c, input["roleCode"].(string))
-	if err != nil {
-		log.Println("Error from FetchRoleByID", err)
+		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
-	collection := roleDoc["roleName"].(string)
-	name := input["name"].(string)
-	email := input["email"].(string)
-	phoneNo := input["phoneNo"].(string)
-	roleCode := input["roleCode"].(string)
-	err = Checker(email, phoneNo, collection)
+	collection, err := FetchCollectionFromRoleDoc(c, input["roleCode"].(string))
 	if err != nil {
+		log.Println("Error from FetchRoleDocAndCollection:", err)
 		return err
 	}
-	superCollection := db.OpenCollections(collection)
-
-	docs, err := db.FindAll(ctx, superCollection, bson.M{}, nil)
+	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, input["email"].(string), input["phoneNo"].(string))
 	if err != nil {
+		log.Println("Error from GenerateUserCodes:", err)
 		return err
 	}
-
-	if len(docs) >= 1 {
-		return errors.New("SuperAdmin already exists")
-	}
-
-	code, err := GenerateEmpCode(collection)
+	otp, err := GenerateAndHashOTP(input)
 	if err != nil {
+		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-
-	if err := PrepareSuperAdmin(input, name, email, code, roleCode); err != nil {
+	if err = PrepareUser(input, code, createdBy); err != nil {
+		log.Println("Error from prepareUser :", err)
 		return err
 	}
-	otp := GenerateOTP()
-	log.Println("otp:", otp)
-	hashedOTP, hashErr := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
-	if hashErr != nil {
-		return fmt.Errorf("failed to hash OTP: %v", hashErr)
-	}
-	log.Println(string(hashedOTP))
-
-	input["password"] = string(hashedOTP)
-	expiry := time.Now().Add(10 * time.Minute)
-	input["otpExpiry"] = expiry
-	res, err := db.CreateOne(context.Background(), superCollection, input)
-	if err != nil {
+	if err := CacheUserInRedis(c, code, input, collection); err != nil {
+		log.Println("Error from CacheUserInRedis: ", err)
 		return err
 	}
-	log.Println(res.InsertedID)
-	err = CreateLoginRecord(c, collection, code, email, phoneNo, string(hashedOTP))
-	if err != nil {
-		log.Println("Error from the createLoginRecord")
+	if _, err := SaveUserToDB(collection, input); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
-
-	key, err := redis.CreateCacheKey("SuperAdmin", code)
-	if err != nil {
-		log.Println("Error from the create Key cache in create superAdmin", err)
-		return errors.New("error from create cache key")
+	if err := CreateLoginRecord(c, collection, code, input["email"].(string), input["phoneNo"].(string), input["password"].(string)); err != nil {
+		log.Println("Error from the createLoginRecord", err)
+		return err
 	}
-
-	err = redis.SetCache(c, key, input)
 	subject := "Your SuperAdmin OTP Verification"
-	body := fmt.Sprintf("Hello %s,\n\nYour OTP for SuperAdmin verification is: %s\n\nThank you!", name, otp)
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for SuperAdmin verification is: %s\n\nThank you!", input["name"].(string), otp)
 
-	err = SendOTPToMail(email, subject, body)
+	err = SendOTPToMail(input["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
 	}
 	log.Println("mail sent successfully")
+	return nil
+}
+func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
+	collection := "SUPERADMIN"
+	coll := db.OpenCollections(collection)
+	data, err := db.FindAll(c, coll, bson.M{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func DeleteSuperAdmin(c *gin.Context) error {
+
+	raw := os.Getenv("COLLECTIONS")
+	parts := strings.Split(raw, ",")
+
+	for _, name := range parts {
+		name = strings.TrimSpace(name)
+
+		collection := db.OpenCollections(name)
+
+		res, err := db.DeleteMany(context.Background(), collection, bson.M{})
+		if err != nil {
+			log.Printf("Delete failed for collection %s: %v", name, err)
+			return err
+		}
+
+		log.Printf("Deleted %d docs from %s", res.DeletedCount, name)
+	}
+
 	return nil
 }
