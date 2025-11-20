@@ -39,25 +39,28 @@ func validateLoginInput(data map[string]interface{}) error {
 	if passwordExists {
 		err := getTrimmedString(data, "password")
 		if err != nil {
-			log.Println("error from getTrimmed string", err)
+			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.PASSWORD_NOT_PROVIDED)
 		}
 	}
 	if emailExists {
 		err := getTrimmedString(data, "email")
 		if err != nil {
+			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.EMAIL_NOT_PROVIDED)
 		}
 	}
 	if phoneExists {
 		err := getTrimmedString(data, "phoneNo")
 		if err != nil {
+			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
 		}
 	}
 	if codeExists {
 		err := getTrimmedString(data, "code")
 		if err != nil {
+			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.CODE_NOT_PROVIDED)
 		}
 	}
@@ -190,6 +193,20 @@ func IncrementLoginAttempts(code string) int {
 }
 
 /*
+* Pass the attempts
+* And update the document with the token generated
+ */
+func UpdateUserAttempts(ctx context.Context, collectionName string, code string, attempts int) error {
+	collection := db.OpenCollections(collectionName)
+
+	filter := bson.M{"code": code}
+	update := bson.M{"$set": bson.M{"loginAttempts": attempts}}
+
+	_, err := db.UpdateOne(ctx, collection, filter, update)
+	return err
+}
+
+/*
 * Pass the token
 * And update the document with the token generated
  */
@@ -197,7 +214,7 @@ func UpdateUserToken(ctx context.Context, collectionName string, code string, to
 	collection := db.OpenCollections(collectionName)
 
 	filter := bson.M{"code": code}
-	update := bson.M{"$set": bson.M{"token": token}}
+	update := bson.M{"$set": bson.M{"token": token, "isActive": true}}
 
 	_, err := db.UpdateOne(ctx, collection, filter, update)
 	return err
@@ -242,20 +259,26 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 		if err := ValidateOTPExpiry(userDoc); err != nil {
 			return "", err
 		}
+		log.Println("while password is otp")
 	}
 	passErr := verifyPassword(dbPassword, inputPassword)
 	if passErr != nil {
 		attempts := IncrementLoginAttempts(code)
+		if err := UpdateUserAttempts(c, collection, code, attempts); err != nil {
+			log.Println("Error while updating the attempts in collection")
+			return "", err
+		}
 		if attempts >= 3 {
 			// Disable account in MongoDB
 			_, _ = db.UpdateOne(context.Background(),
 				db.OpenCollections(collection),
 				bson.M{"code": code},
-				bson.M{"$set": bson.M{"isActive": false}},
+				bson.M{"$set": bson.M{"isBlocked": true}},
 			)
 			log.Println("Error while updating the collection for isActive field")
 			return "", errors.New("account disabled due to 3 invalid attempts")
 		}
+
 		log.Println("Error from IncrementLoginattempts")
 		return "", errors.New("invalid password")
 	}
@@ -309,17 +332,21 @@ func ValidatePasswordInput(body map[string]interface{}) (string, string, error) 
 	_, npExists := body["newPassword"]
 	_, cpExists := body["confirmPassword"]
 
-	if !npExists || !cpExists {
-		return "", "", errors.New("newPassword and confirmPassword are required")
+	if !npExists {
+		return "", "", errors.New("newPassword required")
 	}
-
+	if !cpExists {
+		return "", "", errors.New("confirmPassword required")
+	}
 	err := getTrimmedString(body, "newPassword")
 	if err != nil {
+		log.Println("Error from getTrimmedString:", err)
 		return "", "", errors.New("invalid newPassword")
 	}
 	err = getTrimmedString(body, "confirmPassword")
 	if err != nil {
-		return "", "", errors.New("invalid newPassword")
+		log.Println("Error from getTrimmedString:", err)
+		return "", "", errors.New("invalid confirmPassword")
 	}
 	newPassword := body["newPassword"].(string)
 	confirmPassword := body["confirmPassword"].(string)
@@ -476,17 +503,20 @@ func validateForgetInput(data map[string]interface{}) error {
 	}
 
 	if emailExists {
-		if v, ok := data["email"].(string); !ok || strings.TrimSpace(v) == "" {
+		err := getTrimmedString(data, "email")
+		if err != nil {
+			log.Println("Error from the getTrimmed string:", err)
 			return errors.New(util.EMAIL_NOT_PROVIDED)
 		}
 	}
 
 	if phoneExists {
-		if v, ok := data["phoneNo"].(string); !ok || strings.TrimSpace(v) == "" {
+		err := getTrimmedString(data, "phoneNo")
+		if err != nil {
+			log.Println("Error from the getTrimmed string:", err)
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
 		}
 	}
-
 	return nil
 }
 
@@ -502,7 +532,7 @@ func buildForgetFilter(data map[string]interface{}) bson.M {
 	if v, ok := data["phoneNo"].(string); ok && v != "" {
 		filter["phoneNo"] = v
 	}
-
+	log.Println(filter)
 	return filter
 }
 
@@ -537,7 +567,7 @@ func ForgotPassword(c *gin.Context, data map[string]interface{}) (string, error)
 	user := make(map[string]interface{})
 	err = db.FindOne(context.Background(), mainCollection, filter, user)
 	if err != nil {
-		log.Println("No document fund in collection")
+		log.Println("No document found in collection")
 		return "", err
 	}
 
@@ -554,11 +584,11 @@ func ForgotPassword(c *gin.Context, data map[string]interface{}) (string, error)
 
 	update := bson.M{
 		"$set": bson.M{
+			"reset":     true,
 			"password":  hashedPassword,
 			"otpExpiry": expiry,
 		},
 	}
-
 	loginUpdate := bson.M{
 		"$set": bson.M{
 			"password": hashedPassword,

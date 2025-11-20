@@ -28,4 +28,6 @@ var (
 	ACCESS_NOT_PROVIDED                   string = "each privilege must include at least one access right"
 	ROLE_CODE_KEY_NOT_FOUND               string = "RoleCode key not found"
 	ROLE_CODE_VALUE_NOT_FOUND             string = "RoleCode not found nor the type assertion error"
+	DOB_NOT_PROVIDED                      string = "DOB not provided"
+	NAME_NOT_PROVIDED                     string = "Name not provided"
 )

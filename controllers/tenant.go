@@ -3,6 +3,7 @@ package controllers
 import (
 	"HealthHub360/config/authorization"
 	"HealthHub360/services"
+	"HealthHub360/util"
 	"log"
 	"net/http"
 
@@ -22,15 +23,14 @@ func Tenant(router *gin.Engine) {
 func CreateTenant(c *gin.Context) {
 	tenant := make(map[string]interface{})
 	if err := c.ShouldBindJSON(&tenant); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 	if err := services.CreateTenant(c, tenant); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, util.FailedResponse(err))
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Tenant registered successfully!"})
+	c.JSON(http.StatusOK, util.SuccessResponse("Created successfully"))
 }
 
 /*
@@ -41,12 +41,10 @@ and move into services
 func FetchAll(c *gin.Context) {
 	results, err := services.FetchAllTenants(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, util.FailedResponse(err))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"tenants": results})
+	c.JSON(http.StatusOK, util.SuccessResponse(results))
 }
 
 /*
@@ -59,19 +57,17 @@ func UpdateTenant(c *gin.Context) {
 
 	var body map[string]interface{}
 	if err := c.BindJSON(&body); err != nil {
-		c.JSON(400, gin.H{"error": "invalid body"})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
 
 	updated, err := services.UpdateTenantByCode(c, code, body)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
 	log.Println(updated)
-	c.JSON(200, gin.H{
-		"Success": "Updated Successfully",
-	})
+	c.JSON(200, util.SuccessResponse(updated))
 }
 
 /*

@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -21,51 +22,28 @@ PrepareTenant formats and validates Tenant data.
 Normalizes the DOB, sets default fields, and populates metadata like timestamps.
 Used before inserting the record in the database.
 */
-func PrepareTenant(tenant map[string]interface{}, name string, email string, code string, roleCode string, CreatedBy string) error {
+func PrepareTenant(data map[string]interface{}, name string, email string, code string, roleCode string, CreatedBy string) error {
 
-	dob, _ := tenant["dob"].(string)
+	dob, _ := data["dob"].(string)
 	modifiedDob, err := NormalizeDOB(dob)
 	if err != nil {
 		return err
 	}
 
-	tenant["dob"] = modifiedDob
-	tenant["_id"] = primitive.NewObjectID()
-	tenant["isActive"] = true
-	tenant["code"] = code
-	tenant["roleCode"] = roleCode
-	tenant["CreatedBy"] = CreatedBy
-	tenant["UpdatedBy"] = CreatedBy
-	tenant["createdAt"] = time.Now()
-	tenant["updatedAt"] = time.Now()
+	data["dob"] = modifiedDob
+	data["_id"] = primitive.NewObjectID()
+	data["reset"] = true
+	data["isActive"] = true
+	data["loginAttempts"] = 0
+	data["isBlocked"] = false
+	data["code"] = code
+	data["roleCode"] = roleCode
+	data["CreatedBy"] = CreatedBy
+	data["UpdatedBy"] = CreatedBy
+	data["createdAt"] = time.Now()
+	data["updatedAt"] = time.Now()
 
 	return nil
-}
-
-/*
-fetchRoleCode returns the roleCode for a given roleName (TENANT, SUPERADMIN, ,,.etc)
-*/
-func fetchRoleCode(roleName string) (string, error) {
-
-	roleCollection := db.OpenCollections("role")
-	roleDoc := bson.M{}
-
-	err := db.FindOne(
-		context.Background(),
-		roleCollection,
-		bson.M{"roleName": roleName},
-		&roleDoc)
-
-	if err != nil {
-		return "", fmt.Errorf("failed to find role %s: %v", roleName, err)
-	}
-
-	roleCode, ok := roleDoc["roleCode"].(string)
-	if !ok {
-		return "", errors.New("invalid roleCode type in role collection")
-	}
-
-	return roleCode, nil
 }
 
 /*
@@ -73,59 +51,88 @@ CreateTenant handles creating a Tenant user.
 It validates email/phone, generates employee code, fetches roleCode,
 prepares the data, and inserts the record into MongoDB.
 */
-func CreateTenant(c *gin.Context, tenant map[string]interface{}) error {
-	name, nameErr := tenant["name"].(string)
-	Email, _ := tenant["email"].(string)
-	PhoneNo, _ := tenant["phoneNo"].(string)
-	userCode, codeErr := c.Get("code")
+func CreateTenant(c *gin.Context, data map[string]interface{}) error {
+
+	err := getTrimmedString(data, "name")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.NAME_NOT_PROVIDED)
+	}
+	err = getTrimmedString(data, "email")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.EMAIL_NOT_PROVIDED)
+	}
+	err = getTrimmedString(data, "phoneNo")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
+	}
+	err = getTrimmedString(data, "dob")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.DOB_NOT_PROVIDED)
+	}
+	err = getTrimmedString(data, "roleCode")
+	if err != nil {
+		log.Println("error from getTrimmed string:", err)
+		return errors.New(util.ROLE_CODE_KEY_NOT_FOUND)
+	}
+
+	userCode, codeErr := c.Get("code") //S0001
 	if !codeErr {
 		return errors.New("Invalid code")
 	}
-	CreatedBy := userCode.(string)
-	if !nameErr {
-		return errors.New("Provide the Name")
-	}
-	role := "tenant"
-	email, phoneNo, err := Checker(Email, PhoneNo, role, CreatedBy)
+	CreatedBy := userCode.(string) //S0001
+
+	roleDoc, err := FetchRoleById(c, data["roleCode"].(string))
 	if err != nil {
-		return err
-	}
-	code, err := GenerateEmpCode(role)
-	if err != nil {
+		log.Println("Error from FetchRoleByID", err)
 		return err
 	}
 
-	roleName := "TENANT"
-	roleCode, err := fetchRoleCode(roleName)
+	collection := roleDoc["roleName"].(string)
+	name := data["name"].(string)
+	email := data["email"].(string)
+	phoneNo := data["phoneNo"].(string)
+	roleCode := data["roleCode"].(string)
+	err = Checker(email, phoneNo, collection)
+	if err != nil {
+		return err
+	}
+	code, err := GenerateEmpCode(collection)
 	if err != nil {
 		return err
 	}
 	otp := GenerateOTP()
 	log.Println("otp:", otp)
+	expiry := time.Now().Add(10 * time.Minute)
+	data["otpExpiry"] = expiry
 	hashedOTP, hashErr := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if hashErr != nil {
 		return fmt.Errorf("failed to hash OTP: %v", hashErr)
 	}
 	log.Println(string(hashedOTP))
-	if err := PrepareTenant(tenant, name, email, code, roleCode, CreatedBy); err != nil {
+
+	if err := PrepareTenant(data, name, email, code, roleCode, CreatedBy); err != nil {
 		return err
 	}
-	tenant["password"] = string(hashedOTP)
-	collection := db.OpenCollections("tenant")
+	data["password"] = string(hashedOTP)
 	key, err := redis.CreateCacheKey("tenant", code)
 	if err != nil {
 		return errors.New("error creating cache key")
 	}
-	err = redis.SetCache(c, key, tenant)
+	err = redis.SetCache(c, key, data)
 	if err != nil {
 		return errors.New("Failed to insert the role in cache")
 	}
-	res, err := db.CreateOne(context.Background(), collection, tenant)
+	coll := db.OpenCollections(collection)
+	res, err := db.CreateOne(context.Background(), coll, data)
 	if err != nil {
 		return err
 	}
 	log.Println(res.InsertedID)
-	err = CreateLoginRecord(c, role, code, email, phoneNo, string(hashedOTP))
+	err = CreateLoginRecord(c, collection, code, email, phoneNo, string(hashedOTP))
 	if err != nil {
 		return err
 	}
@@ -148,7 +155,7 @@ where it matches with the filter given with it and perform
 the Find all Function
 */
 func FetchAllTenants(c *gin.Context) ([]interface{}, error) {
-	collection := db.OpenCollections("tenant")
+	collection := db.OpenCollections("TENANT")
 	results, err := db.FindAll(c, collection, nil, nil)
 	if err != nil {
 		return []interface{}{}, err
@@ -206,7 +213,7 @@ Returns error if tenant not found.
 */
 func fetchExistingTenant(code string) (map[string]interface{}, error) {
 
-	collection := db.OpenCollections("tenant")
+	collection := db.OpenCollections("TENANT")
 	filter := bson.M{"code": code}
 
 	var existing map[string]interface{}
