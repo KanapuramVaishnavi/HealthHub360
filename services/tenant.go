@@ -3,7 +3,6 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -13,38 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"golang.org/x/crypto/bcrypt"
 )
-
-/*
-PrepareTenant formats and validates Tenant data.
-Normalizes the DOB, sets default fields, and populates metadata like timestamps.
-Used before inserting the record in the database.
-*/
-func PrepareTenant(data map[string]interface{}, name string, email string, code string, roleCode string, CreatedBy string) error {
-
-	dob, _ := data["dob"].(string)
-	modifiedDob, err := NormalizeDOB(dob)
-	if err != nil {
-		return err
-	}
-
-	data["dob"] = modifiedDob
-	data["_id"] = primitive.NewObjectID()
-	data["reset"] = true
-	data["isActive"] = true
-	data["loginAttempts"] = 0
-	data["isBlocked"] = false
-	data["code"] = code
-	data["roleCode"] = roleCode
-	data["CreatedBy"] = CreatedBy
-	data["UpdatedBy"] = CreatedBy
-	data["createdAt"] = time.Now()
-	data["updatedAt"] = time.Now()
-
-	return nil
-}
 
 /*
 CreateTenant handles creating a Tenant user.
@@ -53,94 +21,41 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 
-	err := getTrimmedString(data, "name")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.NAME_NOT_PROVIDED)
-	}
-	err = getTrimmedString(data, "email")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.EMAIL_NOT_PROVIDED)
-	}
-	err = getTrimmedString(data, "phoneNo")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
-	}
-	err = getTrimmedString(data, "dob")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.DOB_NOT_PROVIDED)
-	}
-	err = getTrimmedString(data, "roleCode")
-	if err != nil {
-		log.Println("error from getTrimmed string:", err)
-		return errors.New(util.ROLE_CODE_KEY_NOT_FOUND)
-	}
-
-	userCode, codeErr := c.Get("code") //S0001
-	if !codeErr {
-		return errors.New("Invalid code")
-	}
-	CreatedBy := userCode.(string) //S0001
-
-	roleDoc, err := FetchRoleById(c, data["roleCode"].(string))
-	if err != nil {
-		log.Println("Error from FetchRoleByID", err)
+	if err := ValidateUserInput(data); err != nil {
 		return err
 	}
-
-	collection := roleDoc["roleName"].(string)
-	name := data["name"].(string)
-	email := data["email"].(string)
-	phoneNo := data["phoneNo"].(string)
-	roleCode := data["roleCode"].(string)
-	err = Checker(email, phoneNo, collection)
+	roleDoc, collection, err := FetchRoleDocAndCollection(c, data["roleCode"].(string))
 	if err != nil {
 		return err
 	}
-	code, err := GenerateEmpCode(collection)
+	code, CreatedBy, err := GenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		return err
 	}
-	otp := GenerateOTP()
+
+	otp, err := GenerateAndHashOTP(data)
+	if err != nil {
+		return err
+	}
 	log.Println("otp:", otp)
-	expiry := time.Now().Add(10 * time.Minute)
-	data["otpExpiry"] = expiry
-	hashedOTP, hashErr := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
-	if hashErr != nil {
-		return fmt.Errorf("failed to hash OTP: %v", hashErr)
-	}
-	log.Println(string(hashedOTP))
 
-	if err := PrepareTenant(data, name, email, code, roleCode, CreatedBy); err != nil {
+	if err := PrepareUser(data, code, CreatedBy); err != nil {
 		return err
 	}
-	data["password"] = string(hashedOTP)
-	key, err := redis.CreateCacheKey("tenant", code)
-	if err != nil {
-		return errors.New("error creating cache key")
-	}
-	err = redis.SetCache(c, key, data)
-	if err != nil {
-		return errors.New("Failed to insert the role in cache")
-	}
-	coll := db.OpenCollections(collection)
-	res, err := db.CreateOne(context.Background(), coll, data)
-	if err != nil {
+	if err := CacheUserInRedis(c, code, data, roleDoc["collection"].(string)); err != nil {
 		return err
 	}
-	log.Println(res.InsertedID)
-	err = CreateLoginRecord(c, collection, code, email, phoneNo, string(hashedOTP))
-	if err != nil {
+	if _, err := SaveUserToDB(collection, data); err != nil {
+		return err
+	}
+	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
 		return err
 	}
 
 	subject := "Your Tenant OTP Verification"
-	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Tenant verification is: %s\n\nThank you!", name, otp)
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Tenant verification is: %s\n\nThank you!", data["name"].(string), otp)
 
-	err = SendOTPToMail(email, subject, body)
+	err = SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
