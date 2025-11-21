@@ -29,6 +29,7 @@ const (
 	superAdminCollection = "SUPERADMIN"
 	hospitalCollection   = "HOSPITAL"
 	tenantCollection     = "TENANT"
+	doctorCollection     = "DOCTOR"
 )
 
 func InitCommonCollections() {
