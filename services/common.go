@@ -25,7 +25,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var tenantCollection *mongo.Collection
+const (
+	superAdminCollection = "SUPERADMIN"
+	hospitalCollection   = "HOSPITAL"
+	tenantCollection     = "TENANT"
+)
 
 func InitCommonCollections() {
 	RoleCollection = db.OpenCollections("role")
@@ -48,7 +52,7 @@ func GenerateEmpCode(collName string) (string, error) {
 		prefix = "T"
 	case "patient", "patients":
 		prefix = "P"
-	case "doctors", "doctor":
+	case "DOCTOR", "doctor":
 		prefix = "D"
 	case "HOSPITAL":
 		prefix = "H"
@@ -109,9 +113,7 @@ func IsPhoneNumberExists(collName string, phone string) (bool, error) {
 	return count > 0, nil
 }
 func getTrimmedString(data map[string]interface{}, key string) error {
-	log.Println(key)
 	raw, exists := data[key]
-	log.Println(raw)
 	if !exists {
 		return fmt.Errorf("%s missing field", key)
 	}
@@ -389,10 +391,28 @@ func CheckerAndGenerateUserCodes(c *gin.Context, collection, email, phone string
 		return "", "", errors.New("missing creator code")
 	}
 
-	CreatedBy := userCodeVal.(string)
+	createdBy := userCodeVal.(string)
 
-	return code, CreatedBy, nil
+	return code, createdBy, nil
 }
+func fetchTenantId(ctx *gin.Context, code string) (string, error) {
+	collection := db.OpenCollections(hospitalCollection)
+	filter := bson.M{"code": code}
+	result := make(map[string]interface{})
+	err := db.FindOne(ctx, collection, filter, result)
+	if err != nil {
+		return "", err
+	}
+	codeVal, ok := result["createdBy"]
+	if !ok {
+		return "", errors.New("tenantiD doesnt exist")
+	}
+	tenantid := codeVal.(string)
+	log.Println(tenantid)
+	return tenantid, nil
+
+}
+
 func GenerateAndHashOTP(data map[string]interface{}) (string, error) {
 
 	otp := GenerateOTP()
@@ -463,25 +483,23 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 
 	var existing models.Login
 	err := db.FindOne(ctx, loginCollection, filter, &existing)
-	if err == nil {
+	if err != nil {
+		if err.Error() == util.ERR_NO_DOC_FOUND {
+			login := models.Login{
+				Code:       code,
+				Collection: role,
+				Email:      email,
+				PhoneNo:    phone,
+				Password:   password,
+			}
+
+			_, err = db.CreateOne(ctx, loginCollection, login)
+			if err != nil {
+				return fmt.Errorf("failed to create login record: %v", err)
+			}
+			return nil
+		}
 		log.Println("Error from findOne function", err)
-		return fmt.Errorf("login already exists with same code, email or phone")
-	}
-
-	if err.Error() == util.ERR_NO_DOC_FOUND {
-		login := models.Login{
-			Code:       code,
-			Collection: role,
-			Email:      email,
-			PhoneNo:    phone,
-			Password:   password,
-		}
-
-		_, err = db.CreateOne(ctx, loginCollection, login)
-		if err != nil {
-			return fmt.Errorf("failed to create login record: %v", err)
-		}
-		return nil
 	}
 
 	return fmt.Errorf("findOne error: %v", err)

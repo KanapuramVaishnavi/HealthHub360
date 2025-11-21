@@ -16,8 +16,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-var collectionName string = "SUPERADMIN"
-
 /*
 PrepareSuperAdmin formats and validates SuperAdmin data.
 Normalizes the DOB, sets default fields, and populates metadata like timestamps.
@@ -104,7 +102,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	return nil
 }
 func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
-	coll := db.OpenCollections(collectionName)
+	coll := db.OpenCollections(superAdminCollection)
 	data, err := db.FindAll(c, coll, bson.M{}, nil)
 	if err != nil {
 		return nil, err
@@ -135,7 +133,7 @@ func UpdateSuperAdmin(c *gin.Context, update map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	refreshSuperAdminCache(c, code, updatedDoc)
+	refreshCache(c, superAdminCollection, code, updatedDoc)
 	return nil
 }
 func ReteriveDoc(c *gin.Context) (map[string]interface{}, error) {
@@ -179,7 +177,7 @@ updateSuperAdminInDB applies the parsed updates to the SuperAdmin document in Mo
 */
 func updateSuperAdminInDB(code string, update bson.M) error {
 
-	collection := db.OpenCollections(collectionName)
+	collection := db.OpenCollections(superAdminCollection)
 	filter := bson.M{"code": code}
 
 	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
@@ -194,9 +192,9 @@ func updateSuperAdminInDB(code string, update bson.M) error {
 refreshTenantCache removes any old cache entry and stores the updated tenant data in Redis.
 Cache failures are logged but not returned as errors (non-blocking).
 */
-func refreshSuperAdminCache(c *gin.Context, code string, data map[string]interface{}) {
+func refreshCache(c *gin.Context, collection string, code string, data map[string]interface{}) {
 
-	key, err := redis.CreateCacheKey(collectionName, code)
+	key, err := redis.CreateCacheKey(collection, code)
 	if err != nil {
 		log.Println("Failed creating tenant cache key:", err)
 		return
