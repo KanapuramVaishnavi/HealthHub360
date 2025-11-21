@@ -77,7 +77,7 @@ where it matches with the filter given with it and perform
 the Find all Function
 */
 func FetchAllTenants(c *gin.Context) ([]interface{}, error) {
-	collection := db.OpenCollections("TENANT")
+	collection := db.OpenCollections(tenantCollection)
 	results, err := db.FindAll(c, collection, nil, nil)
 	if err != nil {
 		return []interface{}{}, err
@@ -135,7 +135,7 @@ Returns error if tenant not found.
 */
 func fetchExistingTenant(code string) (map[string]interface{}, error) {
 
-	collection := db.OpenCollections("TENANT")
+	collection := db.OpenCollections(tenantCollection)
 	filter := bson.M{"code": code}
 
 	var existing map[string]interface{}
@@ -190,7 +190,7 @@ updateTenantInDB applies the parsed updates to the tenant document in MongoDB.
 */
 func updateTenantInDB(code string, update bson.M) error {
 
-	collection := db.OpenCollections("tenant")
+	collection := db.OpenCollections(tenantCollection)
 	filter := bson.M{"code": code}
 
 	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
@@ -207,7 +207,7 @@ Cache failures are logged but not returned as errors (non-blocking).
 */
 func refreshTenantCache(c *gin.Context, code string, data map[string]interface{}) {
 
-	key, err := redis.CreateCacheKey("tenant", code)
+	key, err := redis.CreateCacheKey(tenantCollection, code)
 	if err != nil {
 		log.Println("Failed creating tenant cache key:", err)
 		return
@@ -237,8 +237,13 @@ func DeleteTenantByCode(c *gin.Context, code string) error {
 	if code == "" {
 		return errors.New("tenant code required")
 	}
-	collection := db.OpenCollections("tenant")
+	collection := db.OpenCollections(tenantCollection)
 	filter := bson.M{"code": code}
+	var res interface{}
+	err = db.FindOne(c, collection, filter, res)
+	if err != nil {
+		return err
+	}
 	delres, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
 		return err

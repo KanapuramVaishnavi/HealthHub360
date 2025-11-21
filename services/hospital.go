@@ -2,6 +2,7 @@ package services
 
 import (
 	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
 	"errors"
 	"fmt"
 	"log"
@@ -11,6 +12,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+/*
+* Validate inputs
+* Fetch collection from roleDoc
+* Check if user with same email or phoneNo exists
+* GenerateOtp and bcrypt it
+* Fill the extra fields to insert into the input fields
+* Set in cache as well as in db
+* Create login record in login collection
+* Send otp to the provided mail
+ */
 func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 	if err := ValidateUserInput(data); err != nil {
 		log.Println("Error from ValidateUserInput", err)
@@ -58,66 +69,78 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 	log.Println("mail sent successfully")
 	return nil
 }
-func BuildUpdateFilter(data map[string]interface{}, createdBy string) map[string]interface{} {
-	// if v, ok := data["name"].(string); ok {
-	// 	filter["name"] = v
-	// }
-	// if v, ok := data["email"].(string); ok {
-	// 	filter["email"] = v
-	// }
-	// if v, ok := data["phoneNo"].(string); ok {
-	// 	filter["phoneNo"] = v
-	// }
-	// if v, ok := data["dob"].(string); ok {
-	// 	filter["dob"] = v
-	// }
 
+/*
+* Trim fields if they exists and fix them into the input data
+ */
+func trimIfExists(data map[string]interface{}, key string) error {
+	if _, exists := data[key]; exists {
+		err := getTrimmedString(data, key)
+		if err != nil {
+			log.Printf("Error trimming %s: %v", key, err)
+			return err
+		}
+	}
+	return nil
+}
+
+/*
+* If DOB field exists then trim and normalize it
+* Insert into the input field
+ */
+func handleDOB(data map[string]interface{}) error {
+	raw, exists := data["dob"]
+	if !exists {
+		return nil
+	}
+
+	dobStr, ok := raw.(string)
+	if !ok {
+		return errors.New("dob must be a string")
+	}
+
+	if err := getTrimmedString(data, "dob"); err != nil {
+		return err
+	}
+
+	normalized, err := NormalizeDOB(dobStr)
+	if err != nil {
+		return err
+	}
+
+	data["dob"] = normalized
+	return nil
+}
+
+/*
+* Include all fields provided and extra field to modify into the input data provided
+* Make it as update filter
+ */
+func BuildUpdateFilter(data map[string]interface{}, createdBy string) map[string]interface{} {
 	data["createdBy"] = createdBy
 	data["updatedBy"] = createdBy
 	data["updatedAt"] = time.Now()
-	filter := bson.M{"$set": data}
-	return filter
+	updateFilter := bson.M{"$set": data}
+	return updateFilter
 }
+
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the update and search filters
+ */
 func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) error {
-	_, nameExists := data["name"]
-	if nameExists {
-		s := "name"
-		err := getTrimmedString(data, s)
-		if err != nil {
-			log.Println("Error from getTrimmedString", err)
+	fields := []string{"name", "email", "phoneNo"}
+	for _, f := range fields {
+		if err := trimIfExists(data, f); err != nil {
+			log.Println("Error from ")
 			return err
 		}
 	}
-	email, emailExists := data["email"].(string)
-	if emailExists {
-		err := getTrimmedString(data, email)
-		if err != nil {
-			log.Println("Error from getTrimmedString", err)
-			return err
-		}
+	if err := handleDOB(data); err != nil {
+		return err
 	}
-	phoneNo, phoneExists := data["phoneNo"].(string)
-	if phoneExists {
-		err := getTrimmedString(data, phoneNo)
-		if err != nil {
-			log.Println("Error from getTrimmedString", err)
-			return err
-		}
-	}
-	dob, dobExists := data["dob"].(string)
-	if dobExists {
-		err := getTrimmedString(data, dob)
-		if err != nil {
-			log.Println("Error from getTrimmedString", err)
-			return err
-		}
-		_, err = NormalizeDOB(data["dob"].(string))
-		if err != nil {
-			log.Println("Error from dobNormalize", err)
-			return err
-		}
-		data["dob"] = dob
-	}
+
 	createdBy, ok := c.Get("code")
 	if !ok {
 		return errors.New("unable to fetch code from context")
@@ -126,12 +149,97 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 	filter := bson.M{
 		"code": code,
 	}
-	collection := db.OpenCollections("HOSPITAL")
+	collection := db.OpenCollections(hospitalCollection)
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
 		log.Println("Error from updateOne:", err)
 		return err
 	}
 	log.Println(res.UpsertedCount)
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	refreshCache(c, hospitalCollection, code, result)
+
 	return nil
+}
+
+/*
+* Get code from params
+* Fetch from db
+ */
+func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, error) {
+	coll := hospitalCollection
+	key, err := redis.CreateCacheKey(coll, code)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return nil, err
+	}
+	log.Println(key)
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err == nil && exists {
+		log.Println("From cache")
+		return cached, nil
+	}
+
+	result := make(map[string]interface{})
+	if err != nil {
+		filter := bson.M{
+			"code": code,
+		}
+		collection := db.OpenCollections(coll)
+		err = db.FindOne(c, collection, filter, result)
+		if err != nil {
+			log.Println("Error from the FindOne function,err")
+			return nil, err
+		}
+		err = redis.SetCache(c, key, result)
+		if err != nil {
+			log.Println("Error from the setCache:", err)
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
+	collection := db.OpenCollections(hospitalCollection)
+	doc, err := db.FindAll(c, collection, nil, nil)
+	if err != nil {
+		log.Println("Error from FindAll", err)
+		return nil, err
+	}
+	return doc, nil
+}
+
+func DeleteHospitalByCode(c *gin.Context, code string) (string, error) {
+	collection := db.OpenCollections(hospitalCollection)
+	filter := bson.M{
+		"code": code,
+	}
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function:", err)
+		return "", err
+
+	}
+	_, err = db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from the deleteOne function: ", err)
+		return "", err
+	}
+	coll := hospitalCollection
+	key, err := redis.CreateCacheKey(coll, code)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return "", err
+	}
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache:", err)
+		return "", err
+	}
+	msg := fmt.Sprintf("User %s deleted successfuly ", code)
+	return msg, nil
 }
