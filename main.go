@@ -6,7 +6,6 @@ import (
 	"HealthHub360/config/redis"
 	"HealthHub360/jobs"
 	"HealthHub360/routes"
-	"HealthHub360/services"
 	"log"
 	"os"
 
@@ -21,9 +20,8 @@ func main() {
 	}
 
 	db.ConnectDB()
-	services.InitCommonCollections()
-	services.InitCollections()
 	redis.ConnectRedis()
+	jobs.SeedDoctorLeaves()
 	jobs.StartDailyScheduler()
 
 	port := os.Getenv("PORT")

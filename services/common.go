@@ -32,10 +32,6 @@ const (
 	doctorCollection     = "DOCTOR"
 )
 
-func InitCommonCollections() {
-	RoleCollection = db.OpenCollections("role")
-}
-
 var ctx context.Context = context.Background()
 
 /*
