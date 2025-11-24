@@ -13,6 +13,8 @@ func Doctor(router *gin.Engine) {
 	doctor.POST("/create", authorization.Authorize("doctor", "create"), CreateDoctor)
 	doctor.PUT("/update/:code", authorization.Authorize("doctor", "update"), UpdateDoctor)
 	doctor.GET("/fetch/:code/:tenantId", authorization.Authorize("doctor", "view"), FetchDoctorByCode)
+	doctor.GET("/fetchAll/:tenantId", authorization.Authorize("doctor", "view"), FetchAllDoctors)
+	doctor.DELETE("/delete/:code", authorization.Authorize("doctor", "delete"), DeleteDoctor)
 }
 
 /*
@@ -60,6 +62,34 @@ func FetchDoctorByCode(c *gin.Context) {
 	code := c.Param("code")
 	tenantId := c.Param("tenantId")
 	data, err := services.FetchDoctorByCode(c, code, tenantId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(data))
+}
+
+/*
+* Extract tenantId from the context
+* Pass tenantId to the services
+ */
+func FetchAllDoctors(c *gin.Context) {
+	tenantId := c.Param("tenantId")
+	result, err := services.FetchAllDoctors(c, tenantId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(result))
+}
+
+/*
+* Extract code from the parameter
+* Pass the code to the service
+ */
+func DeleteDoctor(c *gin.Context) {
+	code := c.Param("code")
+	data, err := services.DeleteDoctor(c, code)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

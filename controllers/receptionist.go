@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"HealthHub360/config/authorization"
 	"HealthHub360/services"
 	"HealthHub360/util"
 	"net/http"
@@ -9,13 +10,12 @@ import (
 )
 
 func Receptionist(router *gin.Engine) {
-	router.POST("/receptionist/create", CreateReceptionist)
-	// superAdmin := router.Group("/receptionist", authorization.JWTAuth())
-	// {
-	//  // superAdmin.GET("/fetch", authorization.Authorize("receptionist", "view"), ReadSuperAdmin)
-	//  // superAdmin.PUT("/update", authorization.Authorize("receptionist", "update"), UpdateSuperAdmin)
-	//  // superAdmin.DELETE("/delete", authorization.Authorize("receptionist", "delete"), DeleteSuperAdmin)
-	// }
+	recep := router.Group("/receptionist", authorization.JWTAuth())
+	{
+		recep.POST("/create", authorization.Authorize("receptionist", "create"), CreateReceptionist)
+		recep.GET("/fetch/:code/:tenantid", authorization.Authorize("receptionist", "view"), FetchReceptionistByCode)
+		recep.GET("/fetchAll/:tenantid", authorization.Authorize("receptionist", "view"), FetchReceptionist)
+	}
 }
 
 func CreateReceptionist(ctx *gin.Context) {
@@ -32,4 +32,23 @@ func CreateReceptionist(ctx *gin.Context) {
 	}
 	ctx.JSON(200, util.SuccessResponse("Created successfully"))
 
+}
+func FetchReceptionistByCode(c *gin.Context) {
+	code := c.Param("code")
+	tenantId := c.Param("tenantId")
+	data, err := services.FetchReceptionistByCode(c, code, tenantId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(data))
+}
+func FetchReceptionist(c *gin.Context) {
+	tenantid := c.Param("tenantid")
+	doc, err := services.ReadReceptionist(c, tenantid)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(doc))
 }

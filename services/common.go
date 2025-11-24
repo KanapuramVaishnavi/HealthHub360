@@ -26,10 +26,11 @@ import (
 )
 
 const (
-	superAdminCollection = "SUPERADMIN"
-	hospitalCollection   = "HOSPITAL"
-	tenantCollection     = "TENANT"
-	doctorCollection     = "DOCTOR"
+	superAdminCollection   = "SUPERADMIN"
+	hospitalCollection     = "HOSPITAL"
+	tenantCollection       = "TENANT"
+	doctorCollection       = "DOCTOR"
+	receptionistCollection = "RECEPTIONIST"
 )
 
 var ctx context.Context = context.Background()
@@ -45,14 +46,17 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
-	case "TENANT", "tenants":
-		prefix = "T"
-	case "patient", "patients":
+
+	case "PATIENT":
 		prefix = "P"
-	case "DOCTOR", "doctor":
+	case "RECEPTIONIST":
+		prefix = "RE"
+	case "DOCTOR":
 		prefix = "D"
 	case "HOSPITAL":
 		prefix = "H"
+	case "TENANT":
+		prefix = "T"
 	case "SUPERADMIN":
 		prefix = "S"
 	case "ROLE", "role":
@@ -409,7 +413,27 @@ func fetchTenantId(ctx *gin.Context, code string) (string, error) {
 	return tenantid, nil
 
 }
+func CalculateAge(date_of_birth string) (int, error) {
 
+	layouts := []string{"02-01-2006", "02/01/2006", "2006-01-02"}
+	var birth_date time.Time
+	var err error
+	for _, layout := range layouts {
+		birth_date, err = time.Parse(layout, date_of_birth)
+		if err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return 0, fmt.Errorf("invalid date format: please use DD-MM-YYYY or DD/MM/YYYY")
+	}
+	now := time.Now()
+	age := now.Year() - birth_date.Year()
+	if now.YearDay() < birth_date.YearDay() {
+		age--
+	}
+	return age, nil
+}
 func GenerateAndHashOTP(data map[string]interface{}) (string, error) {
 
 	otp := GenerateOTP()
@@ -431,7 +455,7 @@ PrepareTenant formats and validates Tenant data.
 Normalizes the DOB, sets default fields, and populates metadata like timestamps.
 Used before inserting the record in the database.
 */
-func PrepareUser(data map[string]interface{}, code string, CreatedBy string) error {
+func PrepareUser(data map[string]interface{}, code string, createdBy string) error {
 
 	dob, _ := data["dob"].(string)
 	modifiedDob, err := NormalizeDOB(dob)
@@ -447,8 +471,8 @@ func PrepareUser(data map[string]interface{}, code string, CreatedBy string) err
 	data["reset"] = true
 	data["isActive"] = false
 	data["isBlocked"] = false
-	data["createdBy"] = CreatedBy
-	data["updatedBy"] = CreatedBy
+	data["createdBy"] = createdBy
+	data["updatedBy"] = createdBy
 	data["createdAt"] = time.Now()
 	data["updatedAt"] = time.Now()
 	return nil
