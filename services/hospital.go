@@ -223,7 +223,7 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 			return nil, err
 		}
 		val := result["createdBy"].(string)
-		if val != createdBy {
+		if val != tenantCode {
 			log.Println("This tenant does not have access to fetch")
 			return nil, errors.New("This tenant does not have access to fetch")
 		}
