@@ -2,6 +2,7 @@ package services
 
 import (
 	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
 	"errors"
 	"fmt"
 	"log"
@@ -93,11 +94,11 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 		return err
 	}
 
-	createdBy, ok := c.Get("code")
+	hospitalCode, ok := c.Get("code")
 	if !ok {
 		return errors.New("unable to fetch code from context")
 	}
-	updateFilter := BuildUpdateFilter(data, createdBy.(string))
+	updateFilter := BuildUpdateFilter(data, hospitalCode.(string))
 	filter := bson.M{
 		"code": code,
 	}
@@ -111,8 +112,8 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 	log.Println(value)
 	val := value["createdBy"].(string)
 	log.Println(val)
-	log.Println(createdBy)
-	if val != createdBy {
+	log.Println(hospitalCode)
+	if val != hospitalCode {
 		log.Println("This doctor does not have access to update")
 		return errors.New("This doctor doesnot have access")
 	}
@@ -130,3 +131,77 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 
 	return nil
 }
+
+/*
+* Create a key to fetch from cache
+* Fetch from cache if found then extract tenantId and compare with the input tenantId
+* If not found go to db search for the document
+* Check whether the tenantId matches with the input tenantId
+* If comparision works then return the docs
+ */
+func FetchDoctorByCode(c *gin.Context, code string, tenantId string) (map[string]interface{}, error) {
+
+	coll := doctorCollection
+	key, err := redis.CreateCacheKey(coll, code)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return nil, err
+	}
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, cached)
+	if err == nil && exists {
+		tenantIdFromCache, ok := cached["tenantId"].(string)
+		if !ok {
+			return nil, errors.New("cached doctor missing tenantId")
+		}
+		if tenantId != tenantIdFromCache {
+			return nil, errors.New("tenant not allowed to fetch this doctor")
+		}
+		return cached, nil
+	}
+
+	result := make(map[string]interface{})
+	collection := db.OpenCollections(coll)
+	if err != nil {
+		log.Println("Error from getCache:", err)
+		filter := bson.M{
+			"code": code,
+		}
+		err := db.FindOne(c, collection, filter, result)
+
+		if err != nil {
+			log.Println("Error from findOne function")
+			return nil, errors.New("Error from the findOne function:")
+		}
+		value := result["tenantId"].(string)
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access")
+		}
+		err = redis.SetCache(c, key, result)
+		if err != nil {
+			log.Println("Error from setCache")
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// func FetchAllDoctors(c *gin.Context) ([]map[string]interface{}, error) {
+
+// }
+
+// func DeleteDoctor(c *gin.Context, code string) (string, error) {
+// 	collection := db.OpenCollections(doctorCollection)
+// 	hospitalCodeRaw, ok := c.Get("code")
+// 	if !ok {
+// 		log.Println("Unable to fetch code from the context")
+// 		return "", errors.New("Error unable to fetch code from the context")
+// 	}
+// 	hospitalCode, ok := hospitalCodeRaw.(string)
+// 	if !ok {
+// 		return "", errors.New("Unable ")
+// 	}
+
+// 	db.DeleteOne(c, collection, filter)
+// }

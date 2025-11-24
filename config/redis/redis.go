@@ -102,7 +102,7 @@ func GetCache(c context.Context, key string, dest interface{}) (bool, error) {
 	dataStr, err := Rdb.Get(c, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return false, nil
+			return false, err
 		}
 		log.Println("error while fetching the cache")
 		return false, err
