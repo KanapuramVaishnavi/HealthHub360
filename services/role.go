@@ -12,14 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 )
-
-var RoleCollection *mongo.Collection
-
-func InitCollections() {
-	RoleCollection = db.OpenCollections("role")
-}
 
 /*
 * Take map[string]interface
@@ -297,9 +290,8 @@ func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, err
 
 	collection := db.OpenCollections("role")
 	filter := bson.M{"roleCode": roleCode}
-
-	var role map[string]interface{}
-	err = db.FindOne(c, collection, filter, &role)
+	role := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, role)
 	if err != nil {
 		return nil, errors.New("role not found")
 	}

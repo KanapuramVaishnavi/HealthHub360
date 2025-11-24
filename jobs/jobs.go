@@ -120,3 +120,39 @@ func Generate30MinSlots(start string, end string) []map[string]interface{} {
 	}
 	return slots
 }
+func SeedDoctorLeaves() {
+	coll := db.OpenCollections("DOCTOR_LEAVES")
+
+	staticLeaves := []struct {
+		DoctorCode string
+		Date       string
+	}{
+		{"D001", "26-11-2025"},
+		{"D002", "27-11-2025"},
+	}
+
+	for _, leave := range staticLeaves {
+
+		filter := bson.M{
+			"doctorCode": leave.DoctorCode,
+			"date":       leave.Date,
+		}
+
+		count, err := coll.CountDocuments(context.Background(), filter)
+		if err != nil {
+			log.Println("Error checking leave:", err)
+			continue
+		}
+
+		if count == 0 {
+			_, err := coll.InsertOne(context.Background(), bson.M{
+				"doctorCode": leave.DoctorCode,
+				"date":       leave.Date,
+			})
+
+			if err != nil {
+				log.Println("Error inserting static leave:", err)
+			}
+		}
+	}
+}

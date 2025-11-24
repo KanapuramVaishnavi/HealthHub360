@@ -599,7 +599,7 @@ func ForgotPassword(c *gin.Context, data map[string]interface{}) (string, error)
 		return "", errors.New("Failed to store OTP")
 	}
 
-	loginCollection := db.OpenCollections("login")
+	loginCollection := db.OpenCollections("LOGIN")
 	_, err = db.UpdateOne(context.Background(), loginCollection, filter, loginUpdate)
 	if err != nil {
 		return "", errors.New("Failed to store OTP")

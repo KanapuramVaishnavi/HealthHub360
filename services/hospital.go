@@ -37,6 +37,7 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from GenerateUserCodes:", err)
 		return err
 	}
+	log.Println(code)
 	otp, err := GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
@@ -150,12 +151,25 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 		"code": code,
 	}
 	collection := db.OpenCollections(hospitalCollection)
+	value := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, value)
+	if err != nil {
+		log.Println("Error from the findOne function", err)
+		return err
+	}
+	log.Println(value)
+	val := value["createdBy"].(string)
+	if val != createdBy {
+		return errors.New("This tenant doesnot have access")
+	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
 		log.Println("Error from updateOne:", err)
 		return err
 	}
+
 	log.Println(res.UpsertedCount)
+
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	refreshCache(c, hospitalCollection, code, result)
@@ -174,9 +188,23 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 		log.Println("Error creating cache key:", err)
 		return nil, err
 	}
+
 	log.Println(key)
+	tenantCode, ok := c.Get("code")
+	if !ok {
+		return nil, errors.New("unable to fetch code from context")
+	}
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
+	createdByCache, ok := cached["createdBy"].(string)
+	if !ok {
+		fmt.Println("createdBy not found or invalid")
+		return nil, errors.New("Unable to get the CreatedBy field from cache")
+	}
+	if createdByCache != tenantCode {
+		log.Println("Error from the tenant which is tenant doesnot have access")
+		return nil, errors.New("This tenant does not have access")
+	}
 	if err == nil && exists {
 		log.Println("From cache")
 		return cached, nil
@@ -188,11 +216,18 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 			"code": code,
 		}
 		collection := db.OpenCollections(coll)
+
 		err = db.FindOne(c, collection, filter, result)
 		if err != nil {
 			log.Println("Error from the FindOne function,err")
 			return nil, err
 		}
+		val := result["createdBy"].(string)
+		if val != createdBy {
+			log.Println("This tenant does not have access to fetch")
+			return nil, errors.New("This tenant does not have access to fetch")
+		}
+
 		err = redis.SetCache(c, key, result)
 		if err != nil {
 			log.Println("Error from the setCache:", err)
@@ -204,7 +239,14 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 
 func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 	collection := db.OpenCollections(hospitalCollection)
-	doc, err := db.FindAll(c, collection, nil, nil)
+	tenantCode, ok := c.Get("code")
+	if !ok {
+		return nil, errors.New("unable to fetch code from context")
+	}
+	filter := bson.M{
+		"createdBy": tenantCode,
+	}
+	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
 		return nil, err
@@ -214,9 +256,15 @@ func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 
 func DeleteHospitalByCode(c *gin.Context, code string) (string, error) {
 	collection := db.OpenCollections(hospitalCollection)
-	filter := bson.M{
-		"code": code,
+	tenantCode, ok := c.Get("code")
+	if !ok {
+		return "", errors.New("unable to fetch code from context")
 	}
+	filter := bson.M{
+		"code":      code,
+		"createdBy": tenantCode,
+	}
+	log.Println(filter)
 	result := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, result)
 	if err != nil {
