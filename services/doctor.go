@@ -66,7 +66,7 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		return val, err
 	}
 	subject := "Your Hospital OTP Verification"
-	body := fmt.Sprintf("Hello %s,\n\nYour OTP for SuperAdmin verification is: %s\n\nThank you!", data["name"].(string), otp)
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Hospital verification is: %s\n\nThank you!", data["name"].(string), otp)
 
 	err = SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
@@ -187,21 +187,56 @@ func FetchDoctorByCode(c *gin.Context, code string, tenantId string) (map[string
 	return result, nil
 }
 
-// func FetchAllDoctors(c *gin.Context) ([]map[string]interface{}, error) {
+/*
+* Make a filter
+* FindAll from the above filter
+ */
+func FetchAllDoctors(c *gin.Context, tenantId string) ([]interface{}, error) {
+	collection := db.OpenCollections(doctorCollection)
+	filter := bson.M{
+		"tenantId": tenantId,
+	}
+	result, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from the findAll function: ", err)
+		return nil, err
+	}
+	return result, nil
+}
 
-// }
+/*
+* Get code from the token
+* Compare code with the createdBy from the result document found from filter
+* If comparision works well go for the delete
+* If not return no another hospital admin can have access to delete it
+ */
+func DeleteDoctor(c *gin.Context, code string) (string, error) {
+	collection := db.OpenCollections(doctorCollection)
+	hospitalCodeRaw, ok := c.Get("code")
+	if !ok {
+		log.Println("Unable to fetch code from the context")
+		return "", errors.New("Error unable to fetch code from the context")
+	}
+	hospitalCode, ok := hospitalCodeRaw.(string)
+	if !ok {
+		return "", errors.New("Unable to get hospitalCode from the context")
+	}
 
-// func DeleteDoctor(c *gin.Context, code string) (string, error) {
-// 	collection := db.OpenCollections(doctorCollection)
-// 	hospitalCodeRaw, ok := c.Get("code")
-// 	if !ok {
-// 		log.Println("Unable to fetch code from the context")
-// 		return "", errors.New("Error unable to fetch code from the context")
-// 	}
-// 	hospitalCode, ok := hospitalCodeRaw.(string)
-// 	if !ok {
-// 		return "", errors.New("Unable ")
-// 	}
-
-// 	db.DeleteOne(c, collection, filter)
-// }
+	filter := bson.M{
+		"code": code,
+	}
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function: ", err)
+		return "", err
+	}
+	val := result["createdBy"].(string)
+	if val != hospitalCode {
+		log.Println("This hospital admin doesnot have access")
+		return "", errors.New("This hospital admin doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	msg := fmt.Sprintf("The doctor %s deleted and the count is %d", code, deleted)
+	return msg, nil
+}
