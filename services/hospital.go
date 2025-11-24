@@ -190,9 +190,14 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 	}
 
 	log.Println(key)
-	tenantCode, ok := c.Get("code")
+	tenantCodeRaw, ok := c.Get("code")
 	if !ok {
 		return nil, errors.New("unable to fetch code from context")
+	}
+
+	tenantCode, ok := tenantCodeRaw.(string)
+	if !ok {
+		return nil, errors.New("tenant code is not a valid string")
 	}
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)

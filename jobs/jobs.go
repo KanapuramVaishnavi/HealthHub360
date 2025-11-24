@@ -31,13 +31,13 @@ func RunTodayScheduler() {
 			log.Println("Invalid doctor record:", d)
 			continue
 		}
-		doctorCode, ok := doctor["doctorCode"].(string)
+		doctorCode, ok := doctor["code"].(string)
 		if !ok {
 			log.Println("Invalid doctorCode:", doctor)
 			continue
 		}
 
-		hospitalCode, ok := doctor["hospitalCode"].(string)
+		hospitalCode, ok := doctor["createdBy"].(string)
 		if !ok {
 			log.Println("Invalid hospitalCode:", doctor)
 			continue
