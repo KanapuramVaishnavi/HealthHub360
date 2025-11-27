@@ -284,7 +284,18 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 	}
 
 	roleCode := userDoc["roleCode"].(string)
-	token, err := jwt.GenerateJWT(code, email, roleCode, collection)
+	tenantId := ""
+	isSuperAdmin := false
+	if collection == superAdminCollection {
+		tenantId = ""
+		isSuperAdmin = true
+	} else {
+		tenantId = userDoc["tenantId"].(string)
+		isSuperAdmin = false
+	}
+	log.Println("Login isSuperAdmin:", isSuperAdmin)
+	log.Println("Login tenantId:", tenantId)
+	token, err := jwt.GenerateJWT(code, email, roleCode, collection, tenantId, isSuperAdmin)
 	if err != nil {
 		log.Println("Error while generating the token")
 		return "", err
@@ -321,7 +332,12 @@ func ExtractTokenInfo(c *gin.Context) (collection string, code string, err error
 	if !ok || code == "" {
 		return "", "", errors.New("invalid token: code invalid")
 	}
-
+	superAdminVal, ok := c.Get("isSuperAdmin")
+	IsSuperAdmin, ok := superAdminVal.(bool)
+	log.Println("isSuperAdmin from context", IsSuperAdmin)
+	tenantIdVal, ok := c.Get("tenantId")
+	tenantId, ok := tenantIdVal.(string)
+	log.Println("tenantId from context: ", tenantId)
 	return collection, code, nil
 }
 

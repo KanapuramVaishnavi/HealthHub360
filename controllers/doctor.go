@@ -60,8 +60,7 @@ func UpdateDoctor(c *gin.Context) {
  */
 func FetchDoctorByCode(c *gin.Context) {
 	code := c.Param("code")
-	tenantId := c.Param("tenantId")
-	data, err := services.FetchDoctorByCode(c, code, tenantId)
+	data, err := services.FetchDoctorByCode(c, code)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

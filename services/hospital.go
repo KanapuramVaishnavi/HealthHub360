@@ -43,7 +43,14 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-	if err = PrepareUser(data, code, createdBy); err != nil {
+	tenantId, err := GetTenantIdFromToken(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken: ", err)
+		return err
+	}
+	log.Println("tenantId from context: ", tenantId)
+
+	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
@@ -188,25 +195,24 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 		log.Println("Error creating cache key:", err)
 		return nil, err
 	}
-
 	log.Println(key)
-	tenantCodeRaw, ok := c.Get("code")
-	if !ok {
-		return nil, errors.New("unable to fetch code from context")
-	}
 
-	tenantCode, ok := tenantCodeRaw.(string)
-	if !ok {
-		return nil, errors.New("tenant code is not a valid string")
+	tenantId, err := GetTenantIdFromToken(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken ", err)
+		return nil, err
 	}
+	log.Println("tenantId from token: ", tenantId)
+
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
-	createdByCache, ok := cached["createdBy"].(string)
+	tenantIdCache, ok := cached["tenantId"].(string)
 	if !ok {
 		fmt.Println("createdBy not found or invalid")
 		return nil, errors.New("Unable to get the CreatedBy field from cache")
 	}
-	if createdByCache != tenantCode {
+
+	if tenantIdCache != tenantId {
 		log.Println("Error from the tenant which is tenant doesnot have access")
 		return nil, errors.New("This tenant does not have access")
 	}
@@ -227,8 +233,8 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 			log.Println("Error from the FindOne function,err")
 			return nil, err
 		}
-		val := result["createdBy"].(string)
-		if val != tenantCode {
+		tenantIdFromColl := result["tenantId"].(string)
+		if tenantIdFromColl != tenantId {
 			log.Println("This tenant does not have access to fetch")
 			return nil, errors.New("This tenant does not have access to fetch")
 		}

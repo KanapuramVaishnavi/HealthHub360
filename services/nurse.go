@@ -21,7 +21,7 @@ import (
 * Save to db and cache
 * Send mail
  */
-func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
+func CreateNurse(c *gin.Context, data map[string]interface{}) (string, error) {
 	val := ""
 	err := ValidateUserInput(data)
 	if err != nil {
@@ -38,14 +38,15 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from GenerateUserRole", err)
 		return val, err
 	}
+
 	tenantId, err := GetTenantIdFromToken(c)
 	if err != nil {
-		log.Println("Error from getTenantIfFromToken: ", err)
+		log.Println("Error from getTenantIdFromToken", err)
 		return val, err
 	}
 	log.Println("tenantId from context: ", tenantId)
 
-	data["tenantId"] = tenantId
+	data["tenantid"] = tenantId
 	otp, err := GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
@@ -68,8 +69,8 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from the createLoginRecord", err)
 		return val, err
 	}
-	subject := "Your Hospital OTP Verification"
-	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Hospital verification is: %s\n\nThank you!", data["name"].(string), otp)
+	subject := "Your Nurse OTP Verification"
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Nurse verification is: %s\n\nThank you!", data["name"].(string), otp)
 
 	err = SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
@@ -85,7 +86,7 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 * Get the code from claims which is createdBy field
 * Update based on the update and search filters
  */
-func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) error {
+func UpdateNurse(c *gin.Context, data map[string]interface{}, code string) error {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
 		if err := trimIfExists(data, f); err != nil {
@@ -105,7 +106,7 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 	filter := bson.M{
 		"code": code,
 	}
-	collection := db.OpenCollections(doctorCollection)
+	collection := db.OpenCollections(nurseCollection)
 	value := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, value)
 	if err != nil {
@@ -136,38 +137,49 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 }
 
 /*
+It gives the all the nurses on the databse
+*/
+func FetchAllNurses(c *gin.Context, tenantid string) ([]interface{}, error) {
+	collection := db.OpenCollections(nurseCollection)
+	filter := bson.M{"tenantid": tenantid}
+	log.Println(filter)
+	doc, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from FindAll", err)
+		return nil, err
+	}
+	return doc, nil
+}
+
+/*
+It gives the all the nurses on the specific doctor
+*/
+func FetchAllNursesofDoctor(c *gin.Context, Docid string) ([]interface{}, error) {
+	collection := db.OpenCollections(nurseCollection)
+	filter := bson.M{"doctorid": Docid}
+	doc, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from FindAll", err)
+		return nil, err
+	}
+	return doc, nil
+}
+
+/*
 * Create a key to fetch from cache
 * Fetch from cache if found then extract tenantId and compare with the input tenantId
 * If not found go to db search for the document
 * Check whether the tenantId matches with the input tenantId
 * If comparision works then return the docs
  */
-func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{}, error) {
+func FetchNurseByCode(c *gin.Context, code string, tenantId string) (map[string]interface{}, error) {
 
-	coll := doctorCollection
-	key, err := redis.CreateCacheKey(coll, doctorId)
+	coll := nurseCollection
+	key, err := redis.CreateCacheKey(coll, code)
 	if err != nil {
 		log.Println("Error creating cache key:", err)
 		return nil, err
 	}
-
-	// codeVal, ok := c.Get("code")
-	// if !ok {
-	// 	log.Println("Error while fetching code from context")
-	// 	return nil, errors.New("Error while fetching code from context")
-	// }
-	// code, ok := codeVal.(string)
-	// if !ok {
-	// 	log.Println("Error while geting code type assertion")
-	// 	return nil, errors.New("Type assertion error")
-	// }
-
-	tenantId, err := GetTenantIdFromToken(c)
-	if err != nil {
-		log.Println("Error from getTenantIdFromToken ", err)
-		return nil, err
-	}
-	log.Println("tenantId from token: ", tenantId)
 
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
@@ -184,78 +196,41 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 
 	result := make(map[string]interface{})
 	collection := db.OpenCollections(coll)
-	filter := bson.M{
-		"code": doctorId,
-	}
-	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function", err)
-		return nil, errors.New("Error from the findOne function:")
-	}
-	value := result["tenantId"].(string)
-	if value != tenantId {
-		return nil, errors.New("This User admin doesnot have access because of tenantId mismatch")
-	}
+		log.Println("Error from getCache:", err)
+		filter := bson.M{
+			"code": code,
+		}
+		err := db.FindOne(c, collection, filter, result)
 
-	err = redis.SetCache(c, key, result)
-	if err != nil {
-		log.Println("Error from setCache")
-		return nil, err
-	}
-
-	return result, nil
-}
-
-/*
-* Make a filter
-* FindAll from the above filter
- */
-func FetchAllDoctors(c *gin.Context, tenantId string) ([]interface{}, error) {
-	collection := db.OpenCollections(doctorCollection)
-	filter := bson.M{
-		"tenantId": tenantId,
-	}
-	result, err := db.FindAll(c, collection, filter, nil)
-	if err != nil {
-		log.Println("Error from the findAll function: ", err)
-		return nil, err
+		if err != nil {
+			log.Println("Error from findOne function")
+			return nil, errors.New("Error from the findOne function:")
+		}
+		value := result["tenantId"].(string)
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access")
+		}
+		err = redis.SetCache(c, key, result)
+		if err != nil {
+			log.Println("Error from setCache")
+			return nil, err
+		}
 	}
 	return result, nil
 }
 
 /*
-* Get code from the token
-* Compare code with the createdBy from the result document found from filter
-* If comparision works well go for the delete
-* If not return no another hospital admin can have access to delete it
- */
-func DeleteDoctor(c *gin.Context, code string) (string, error) {
-	collection := db.OpenCollections(doctorCollection)
-	hospitalCodeRaw, ok := c.Get("code")
-	if !ok {
-		log.Println("Unable to fetch code from the context")
-		return "", errors.New("Error unable to fetch code from the context")
-	}
-	hospitalCode, ok := hospitalCodeRaw.(string)
-	if !ok {
-		return "", errors.New("Unable to get hospitalCode from the context")
-	}
-
-	filter := bson.M{
-		"code": code,
-	}
-	result := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, result)
+Delete Nurse By code where it matchs the code of the given parameters
+*/
+func DeleteNurseByCode(c *gin.Context, nurseid string) error {
+	collection := db.OpenCollections(nurseCollection)
+	filter := bson.M{"code": nurseid}
+	doc, err := db.DeleteOne(c, collection, filter)
+	log.Println(doc.DeletedCount)
 	if err != nil {
-		log.Println("Error from the findOne function: ", err)
-		return "", err
+		log.Println("Error from DeleteOne", err)
+		return err
 	}
-	val := result["createdBy"].(string)
-	if val != hospitalCode {
-		log.Println("This hospital admin doesnot have access")
-		return "", errors.New("This hospital admin doesnot have access")
-	}
-	deleted, err := db.DeleteOne(c, collection, filter)
-	msg := fmt.Sprintf("The doctor %s deleted and the count is %d", code, deleted)
-	return msg, nil
+	return nil
 }

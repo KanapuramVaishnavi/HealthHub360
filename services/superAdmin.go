@@ -74,7 +74,8 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-	if err = PrepareUser(input, code, createdBy); err != nil {
+
+	if err = PrepareUser(input, code, createdBy, ""); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}

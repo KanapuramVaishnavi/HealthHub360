@@ -94,15 +94,13 @@ func FindOne(ctx context.Context, collection *mongo.Collection, filter interface
 	defer cancel()
 	SingleResult := collection.FindOne(ctxTimeout, filter)
 	if err := SingleResult.Err(); err != nil {
-		if err == mongo.ErrNoDocuments {
-			return errors.New(util.ERR_NO_DOC_FOUND)
-		}
 		return err
 	}
 	if err := SingleResult.Decode(result); err != nil {
 		log.Println("Error decoding document:", err)
 		return err
 	}
+	// log.Println(result)
 	return nil
 }
 

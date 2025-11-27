@@ -41,8 +41,8 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 		return err
 	}
 	log.Println("otp:", otp)
-
-	if err := PrepareUser(data, code, CreatedBy); err != nil {
+	tenantId := code
+	if err := PrepareUser(data, code, CreatedBy, tenantId); err != nil {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}

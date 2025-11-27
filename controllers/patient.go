@@ -18,10 +18,12 @@ func CreatePatient(c *gin.Context) {
 	err := c.BindJSON(&data)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
+		return
 	}
 	msg, err := services.CreatePatient(c, data)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
+		return
 	}
 	c.JSON(200, util.SuccessResponse(msg))
 }
