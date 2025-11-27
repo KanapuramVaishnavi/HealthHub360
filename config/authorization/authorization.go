@@ -111,19 +111,17 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 		log.Println(claims.Collection)
-		if claims.Collection != "tenant" {
-			if err := verifyUserExists(claims.Collection, claims.Code); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				c.Abort()
-				return
-			}
+		if err := verifyUserExists(claims.Collection, claims.Code); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.Abort()
+			return
 		}
-
 		c.Set("code", claims.Code)
 		c.Set("email", claims.Email)
 		c.Set("roleCode", claims.RoleCode)
 		c.Set("collection", claims.Collection)
-
+		c.Set("tenantId", claims.TenantId)
+		c.Set("isSuperAdmin", claims.IsSuperAdmin)
 		c.Next()
 	}
 }

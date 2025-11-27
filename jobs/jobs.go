@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"HealthHub360/config/db"
+	"HealthHub360/services"
 	"context"
 	"log"
 	"time"
@@ -14,6 +15,7 @@ func StartDailyScheduler() {
 	c := cron.New()
 
 	// Runs every day at 00:05 AM
+	// c.AddFunc("5 0 * * *", func()
 	c.AddFunc("5 0 * * *", func() {
 		log.Println("Running Daily Doctor Timeslot Scheduler...")
 		RunTodayScheduler()
@@ -31,21 +33,21 @@ func RunTodayScheduler() {
 			log.Println("Invalid doctor record:", d)
 			continue
 		}
-		doctorCode, ok := doctor["code"].(string)
+		doctorId, ok := doctor["code"].(string)
 		if !ok {
-			log.Println("Invalid doctorCode:", doctor)
+			log.Println("Invalid doctorId:", doctor)
 			continue
 		}
 
-		hospitalCode, ok := doctor["createdBy"].(string)
+		hospitalId, ok := doctor["createdBy"].(string)
 		if !ok {
-			log.Println("Invalid hospitalCode:", doctor)
+			log.Println("Invalid hospitalId:", doctor)
 			continue
 		}
-		err := CreateDailySlots(context.Background(), doctorCode, hospitalCode, today)
+		err := CreateDailySlots(context.Background(), doctorId, hospitalId, today)
 
 		if err != nil {
-			log.Println("Error generating slots for doctor:", doctorCode, err)
+			log.Println("Error generating slots for doctor:", doctorId, err)
 		}
 	}
 }
@@ -58,39 +60,44 @@ func GetAllDoctors() []interface{} {
 	}
 	return docs
 }
-func CreateDailySlots(ctx context.Context, doctorCode string, hospitalCode string, date time.Time) error {
+func CreateDailySlots(ctx context.Context, doctorId string, hospitalId string, date time.Time) error {
 
 	weekday := date.Weekday().String()
 
 	isWeeklyOff := (weekday == "Saturday" || weekday == "Sunday")
-	isLeave, _ := IsDoctorOnLeave(doctorCode, date)
+	isLeave, _ := IsDoctorOnLeave(doctorId, date)
 
 	slots := []map[string]interface{}{}
 	if !isWeeklyOff && !isLeave {
 		slots = Generate30MinSlots("10:00", "18:00")
 	}
-
+	dateStr := date.Format("02-01-2006")
+	dateModified, err := services.NormalizeDOB(dateStr)
+	if err != nil {
+		log.Println("Error while normalizing the date in creating slots: ", err)
+		return err
+	}
 	record := bson.M{
-		"doctorCode":   doctorCode,
-		"hospitalCode": hospitalCode,
-		"date":         date.Format("02-01-2006"),
-		"day":          weekday,
-		"isWeeklyOff":  isWeeklyOff,
-		"isLeave":      isLeave,
-		"slots":        slots,
-		"createdAt":    time.Now(),
+		"doctorId":    doctorId,
+		"hospitalId":  hospitalId,
+		"date":        dateModified,
+		"day":         weekday,
+		"isWeeklyOff": isWeeklyOff,
+		"isLeave":     isLeave,
+		"slots":       slots,
+		"createdAt":   time.Now(),
 	}
 
 	coll := db.OpenCollections("DOCTOR_TIMESLOTS")
-	_, err := db.CreateOne(ctx, coll, record)
+	_, err = db.CreateOne(ctx, coll, record)
 	return err
 }
-func IsDoctorOnLeave(doctorCode string, date time.Time) (bool, error) {
+func IsDoctorOnLeave(doctorId string, date time.Time) (bool, error) {
 	leaveColl := db.OpenCollections("DOCTOR_LEAVES")
 
 	filter := bson.M{
-		"doctorCode": doctorCode,
-		"date":       date.Format("02-01-2006"),
+		"doctorId": doctorId,
+		"date":     date.Format("02-01-2006"),
 	}
 	count, err := leaveColl.CountDocuments(context.Background(), filter)
 	if err != nil {
@@ -124,18 +131,18 @@ func SeedDoctorLeaves() {
 	coll := db.OpenCollections("DOCTOR_LEAVES")
 
 	staticLeaves := []struct {
-		DoctorCode string
-		Date       string
+		DoctorId string
+		Date     string
 	}{
-		{"D001", "26-11-2025"},
-		{"D002", "27-11-2025"},
+		{"D0001", "27-11-2025"},
+		{"D0002", "27-11-2025"},
 	}
 
 	for _, leave := range staticLeaves {
 
 		filter := bson.M{
-			"doctorCode": leave.DoctorCode,
-			"date":       leave.Date,
+			"doctorId": leave.DoctorId,
+			"date":     leave.Date,
 		}
 
 		count, err := coll.CountDocuments(context.Background(), filter)
@@ -146,8 +153,8 @@ func SeedDoctorLeaves() {
 
 		if count == 0 {
 			_, err := coll.InsertOne(context.Background(), bson.M{
-				"doctorCode": leave.DoctorCode,
-				"date":       leave.Date,
+				"doctorId": leave.DoctorId,
+				"date":     leave.Date,
 			})
 
 			if err != nil {

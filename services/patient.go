@@ -15,6 +15,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from ValidateUserInput:", err)
 		return val, err
 	}
+
 	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from fetchRoleDocAndCollection:", err)
@@ -37,7 +38,14 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from trimIfExists")
 		return val, err
 	}
-	if err = PrepareUser(data, code, createdBy); err != nil {
+
+	tenantId, err := GetTenantIdFromToken(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken", err)
+		return val, err
+	}
+	log.Println("tenantId from context: ", tenantId)
+	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return val, err
 	}

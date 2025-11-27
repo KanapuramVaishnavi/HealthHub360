@@ -98,18 +98,18 @@ func SetCache(c context.Context, key string, value interface{}) error {
 * If found then pass the value to the desired variable declared
 * If not found pass the error and return false
  */
-func GetCache(c context.Context, key string, dest interface{}) (bool, error) {
+func GetCache(c context.Context, key string, dest *map[string]interface{}) (bool, error) {
 	dataStr, err := Rdb.Get(c, key).Result()
 	if err != nil {
 		if err == redis.Nil {
-			return false, err
+			return false, nil
 		}
 		log.Println("error while fetching the cache")
 		return false, err
 	}
 	err = json.Unmarshal([]byte(dataStr), dest)
 	if err != nil {
-		log.Println("Failed to unmarsahl to destination variable")
+		log.Println("Failed to unmarshal to destination variable")
 		return false, err
 	}
 	return true, nil

@@ -26,11 +26,15 @@ import (
 )
 
 const (
-	superAdminCollection   = "SUPERADMIN"
-	hospitalCollection     = "HOSPITAL"
-	tenantCollection       = "TENANT"
-	doctorCollection       = "DOCTOR"
-	receptionistCollection = "RECEPTIONIST"
+	superAdminCollection     = "SUPERADMIN"
+	hospitalCollection       = "HOSPITAL"
+	tenantCollection         = "TENANT"
+	doctorCollection         = "DOCTOR"
+	doctorTimeSlotCollection = "DOCTOR_TIMESLOTS"
+	receptionistCollection   = "RECEPTIONIST"
+	patientCollection        = "PATIENT"
+	medicalRecordCollection  = "MEDICAL_RECORD"
+	nurseCollection          = "NURSE"
 )
 
 var ctx context.Context = context.Background()
@@ -46,7 +50,14 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
-
+	case "DOCTOR_TIMESLOTS":
+		prefix = "DT"
+	case "APPOINTMENT":
+		prefix = "A"
+	case "MEDICAL_RECORD":
+		prefix = "M"
+	case "NURSE":
+		prefix = "N"
 	case "PATIENT":
 		prefix = "P"
 	case "RECEPTIONIST":
@@ -253,7 +264,7 @@ func FetchUserByCode(ctx *gin.Context, code string, collectionStr string) (inter
 
 	user := make(map[string]interface{})
 	filter := bson.M{"code": code}
-	exists, err := redis.GetCache(ctx, code, user)
+	exists, err := redis.GetCache(ctx, code, &user)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +466,7 @@ PrepareTenant formats and validates Tenant data.
 Normalizes the DOB, sets default fields, and populates metadata like timestamps.
 Used before inserting the record in the database.
 */
-func PrepareUser(data map[string]interface{}, code string, createdBy string) error {
+func PrepareUser(data map[string]interface{}, code string, createdBy string, tenantId string) error {
 
 	dob, _ := data["dob"].(string)
 	modifiedDob, err := NormalizeDOB(dob)
@@ -471,6 +482,7 @@ func PrepareUser(data map[string]interface{}, code string, createdBy string) err
 	data["reset"] = true
 	data["isActive"] = false
 	data["isBlocked"] = false
+	data["tenantId"] = tenantId
 	data["createdBy"] = createdBy
 	data["updatedBy"] = createdBy
 	data["createdAt"] = time.Now()
@@ -501,11 +513,12 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 			{"phoneNo": phone},
 		},
 	}
-
+	log.Println(filter)
 	var existing models.Login
 	err := db.FindOne(ctx, loginCollection, filter, &existing)
+	log.Println(err)
 	if err != nil {
-		if err.Error() == util.ERR_NO_DOC_FOUND {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			login := models.Login{
 				Code:       code,
 				Collection: role,
@@ -538,4 +551,18 @@ func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, 
 		return errors.New("Error from setCache")
 	}
 	return nil
+}
+func GetTenantIdFromToken(c *gin.Context) (string, error) {
+	val := ""
+	tenantIdVal, ok := c.Get("tenantId")
+	if !ok {
+		log.Println("Error while fetching tenantId from token")
+		return val, errors.New("Error while fetching tenantId from token")
+	}
+	tenantId, ok := tenantIdVal.(string)
+	if !ok {
+		log.Println("Error while type converting from interface to string tenantId ")
+		return val, errors.New("Type assertion for tenantId from token ")
+	}
+	return tenantId, nil
 }
