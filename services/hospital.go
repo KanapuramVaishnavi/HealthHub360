@@ -43,7 +43,7 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken: ", err)
 		return err
@@ -197,7 +197,7 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 	}
 	log.Println(key)
 
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
 		return nil, err

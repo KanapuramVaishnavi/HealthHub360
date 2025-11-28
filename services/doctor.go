@@ -38,7 +38,7 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from GenerateUserRole", err)
 		return val, err
 	}
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIfFromToken: ", err)
 		return val, err
@@ -162,7 +162,7 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 	// 	return nil, errors.New("Type assertion error")
 	// }
 
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
 		return nil, err

@@ -1,11 +1,14 @@
 package services
 
 import (
+	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
 	"errors"
 	"fmt"
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
@@ -35,11 +38,15 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	log.Println(otp)
 	err = trimIfExists(data, "gender")
 	if err != nil {
+		log.Println("Error from trimIfExists", err)
+		return val, err
+	}
+	err = trimIfExists(data, "admissionDate")
+	if err != nil {
 		log.Println("Error from trimIfExists")
 		return val, err
 	}
-
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken", err)
 		return val, err
@@ -77,4 +84,60 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	}
 	log.Println("mail sent successfully")
 	return "created successfully", nil
+}
+
+func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{}, error) {
+	coll := patientCollection
+	key, err := redis.CreateCacheKey(coll, patientId)
+	if err != nil {
+		log.Println("Error from CreateCacheKey: ", err)
+		return nil, err
+	}
+
+	tenantId, err := GetTenantIdFromContext(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken ", err)
+		return nil, err
+	}
+	log.Println("tenantId from token: ", tenantId)
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	log.Println("From cache: ", cached)
+	tenantIdCache, ok := cached["tenantId"].(string)
+	if !ok {
+		fmt.Println("createdBy not found or invalid")
+		return nil, errors.New("Unable to get the CreatedBy field from cache")
+	}
+	if tenantIdCache != tenantId {
+		log.Println("Error from the tenant which is tenant doesnot have access")
+		return nil, errors.New("This tenant does not have access")
+	}
+	if err == nil && exists {
+		return cached, nil
+	}
+
+	collection := db.OpenCollections(patientCollection)
+	filter := bson.M{
+		"code": patientId,
+	}
+
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, &result)
+	log.Println("From db: ", result)
+	if err != nil {
+		log.Println("Error from findOne function: ", err)
+		return nil, err
+	}
+	tenantIdFromColl := result["tenantId"].(string)
+	if tenantIdFromColl != tenantId {
+		log.Println("This tenant does not have access to fetch")
+		return nil, errors.New("This tenant does not have access to fetch")
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from SetCache: ", err)
+		return nil, err
+	}
+	return result, nil
 }
