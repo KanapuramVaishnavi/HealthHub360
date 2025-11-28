@@ -552,7 +552,7 @@ func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, 
 	}
 	return nil
 }
-func GetTenantIdFromToken(c *gin.Context) (string, error) {
+func GetTenantIdFromContext(c *gin.Context) (string, error) {
 	val := ""
 	tenantIdVal, ok := c.Get("tenantId")
 	if !ok {

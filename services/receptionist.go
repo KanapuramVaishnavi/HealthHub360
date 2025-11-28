@@ -46,7 +46,7 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 	}
 	log.Println("otp:", otp)
 
-	tenantId, err := GetTenantIdFromToken(ctx)
+	tenantId, err := GetTenantIdFromContext(ctx)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken", err)
 		return err
@@ -97,7 +97,7 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		log.Println("Error creating cache key:", err)
 		return nil, err
 	}
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from the getTenantIdFromToken:", err)
 		return nil, err
@@ -592,7 +592,7 @@ func BookAppointment(c *gin.Context, doctorId string, nurseId string, data map[s
 	if err != nil {
 		return nil, err
 	}
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIfFromToken", err)
 		return nil, err

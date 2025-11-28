@@ -39,7 +39,7 @@ func CreateNurse(c *gin.Context, data map[string]interface{}) (string, error) {
 		return val, err
 	}
 
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken", err)
 		return val, err

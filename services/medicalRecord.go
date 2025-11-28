@@ -20,7 +20,7 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 		return nil, err
 	}
 
-	tenantId, err := GetTenantIdFromToken(c)
+	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
 		return nil, err
