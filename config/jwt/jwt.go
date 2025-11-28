@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtKey = []byte("your_secret_key")
+var jwtKey = []byte(os.Getenv("JWT_SECRET"))
 
 type JWTClaim struct {
 	Code         string `json:"code"`
@@ -35,7 +35,7 @@ func GenerateJWT(code, email, roleCode, collectionName, tenantId string, isSuper
 	expDaysStr := os.Getenv("JWT_EXP_DAYS")
 	expDays, err := strconv.Atoi(expDaysStr)
 	if err != nil || expDays <= 0 {
-		expDays = 1 // default to 1 day
+		expDays = 7 // default to 1 day
 	}
 
 	expDuration := time.Duration(expDays) * 24 * time.Hour
