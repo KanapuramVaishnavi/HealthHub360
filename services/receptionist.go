@@ -429,7 +429,7 @@ func checkAndBookSlot(ctx context.Context, slotColl *mongo.Collection, doc map[s
 * Generate new medicalDocument
 * Insert new document in the medicalRecord db
  */
-func createMedicalRecord(ctx context.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string) (string, error) {
+func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string) (string, error) {
 	medicalCode, err := GenerateEmpCode(medicalRecordCollection)
 	if err != nil {
 		log.Println("Error while generating medicalRecord code: ", err)
@@ -449,9 +449,22 @@ func createMedicalRecord(ctx context.Context, data map[string]interface{}, docto
 		"createdAt":     time.Now(),
 		"updatedAt":     time.Now(),
 	}
-
-	coll := db.OpenCollections(medicalRecordCollection)
-	_, err = db.CreateOne(ctx, coll, medicalDoc)
+	_, err = GenerateAndHashOTP(data)
+	if err != nil {
+		log.Println("Error from GeneraeAndHashOTP:", err)
+		return "", err
+	}
+	coll := medicalRecordCollection
+	collection := db.OpenCollections(medicalRecordCollection)
+	if err := CacheUserInRedis(c, medicalCode, data, coll); err != nil {
+		log.Println("Error from CacheUserInRedis: ", err)
+		return "", err
+	}
+	if _, err := SaveUserToDB(coll, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
+		return "", err
+	}
+	_, err = db.CreateOne(ctx, collection, medicalDoc)
 	if err != nil {
 		log.Println("Error while creating createMedicalRecord: ", err)
 		return "", err
@@ -539,6 +552,26 @@ func updatePatientAppointments(ctx context.Context, patientId string, newApp map
 		log.Println("Error while updating patientAppointments: ", err)
 		return errors.New("Error while updating patientAppointment")
 	}
+	updatedPatient := make(map[string]interface{})
+	if err := db.FindOne(ctx, collection, filter, updatedPatient); err != nil {
+		return err
+	}
+
+	key, err := redis.CreateCacheKey(patientCollection, patientId)
+	if err != nil {
+		log.Println("Error while creating cache key(patient):", err)
+		return err
+	}
+	err = redis.DeleteCache(ctx, key)
+	if err != nil {
+		log.Println("Error from deleteCache(patient): ", err)
+		return err
+	}
+	err = redis.SetCache(ctx, key, updatedPatient)
+	if err != nil {
+		log.Println("Error from setCache unable to set patient:", err)
+		return err
+	}
 	return err
 }
 
@@ -577,14 +610,15 @@ func BookAppointment(c *gin.Context, doctorId string, nurseId string, data map[s
 		log.Println("Error from fetchDoctorSlot:", err)
 		return nil, err
 	}
-	timeGiven := data["time"].(string)
-	if err := checkAndBookSlot(c, slotColl, doc, timeGiven, data["patientId"].(string)); err != nil {
-		log.Println("Error fron checAndBookSlot: ", err)
-		return nil, err
-	}
+
 	appCode, err := GenerateAppointmentCode(c, data["patientId"].(string))
 	if err != nil {
 		log.Println("Error from GenerateAppointment: ", err)
+		return nil, err
+	}
+	timeGiven := data["time"].(string)
+	if err := checkAndBookSlot(c, slotColl, doc, timeGiven, data["patientId"].(string)); err != nil {
+		log.Println("Error fron checAndBookSlot: ", err)
 		return nil, err
 	}
 	data["appCode"] = appCode

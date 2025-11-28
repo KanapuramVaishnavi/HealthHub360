@@ -35,6 +35,7 @@ const (
 	patientCollection        = "PATIENT"
 	medicalRecordCollection  = "MEDICAL_RECORD"
 	nurseCollection          = "NURSE"
+	medicineCollection       = "MEDICINES"
 )
 
 var ctx context.Context = context.Background()
@@ -50,6 +51,8 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
+	case "MEDICINES":
+		prefix = "MED"
 	case "DOCTOR_TIMESLOTS":
 		prefix = "DT"
 	case "APPOINTMENT":
