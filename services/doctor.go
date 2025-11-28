@@ -28,6 +28,11 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from ValidateUserInput:", err)
 		return val, err
 	}
+	err = getTrimmedString(data, "department")
+	if err != nil {
+		log.Println("Error from the getTrimmedString: ", err)
+		return val, err
+	}
 	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from FetchRoleDocAndCollection:", err)

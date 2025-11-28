@@ -11,6 +11,7 @@ type Doctor struct {
 	Code          string             `json:"code" bson:"code"`
 	Name          string             `json:"name" bson:"name"`
 	Mail          string             `json:"mail" bson:"mail"`
+	Department    string             `json:"department" bson:"department"`
 	Availability  []time.Time        `json:"availability" bson:"availability"`
 	PhoneNo       string             `json:"phoneNo" bson:"phoneNo"`
 	Password      string             `json:"password,omitempty" bson:"password,omitempty"`
