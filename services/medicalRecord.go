@@ -81,6 +81,30 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 	}
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
+	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	mFilter := bson.M{
+		"code": medicalRecordId,
+	}
+	medicalRecord := make(map[string]interface{})
+	err := db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
+	if err != nil {
+		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		return err
+	}
+	nurseIdVal, ok := medicalRecord["nurseId"]
+	if !ok {
+		log.Println("Error while checking the value is present in it or not")
+		return errors.New("Error while checking the the nurseId exists")
+	}
+	nurseId, ok := nurseIdVal.(string)
+	if !ok {
+		log.Println("Error during type assertion error")
+		return errors.New("Error type assertion error for nurseId")
+	}
+	if nurseId != code {
+		log.Println("This nurse doesnot have access to updatethe record")
+		return errors.New("This nurse doesnot have access to updatethe record")
+	}
 	collection := db.OpenCollections(medicalRecordCollection)
 	filter := bson.M{
 		"code": medicalRecordId,
@@ -109,6 +133,30 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	}
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
+	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	mFilter := bson.M{
+		"code": medicalRecordId,
+	}
+	medicalRecord := make(map[string]interface{})
+	err := db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
+	if err != nil {
+		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		return err
+	}
+	doctorIdVal, ok := medicalRecord["doctorId"]
+	if !ok {
+		log.Println("Error while checking the value is present in it or not")
+		return errors.New("Error while checking the the doctorId exists")
+	}
+	doctorId, ok := doctorIdVal.(string)
+	if !ok {
+		log.Println("Error during type assertion error")
+		return errors.New("Error type assertion error for doctorId")
+	}
+	if doctorId != code {
+		log.Println("This doctor doesnot have access to update the record")
+		return errors.New("This doctor doesnot have access to update the record")
+	}
 	collection := db.OpenCollections(medicalRecordCollection)
 	filter := bson.M{
 		"code": medicalRecordId,
@@ -124,6 +172,44 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	log.Println("Updated: ", updated.ModifiedCount)
 	return nil
 }
+
+// func UpdateMedicalRecordByReceptionist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
+
+// 	fields := []string{"doctorId", "nurseId", "patientId", "reason"}
+// 	for _, f := range fields {
+// 		if err := trimIfExists(data, f); err != nil {
+// 			log.Println("Error from trimIfExists")
+// 			return err
+// 		}
+// 	}
+// 	createdByVal, ok := c.Get("code")
+// 	if !ok {
+// 		log.Println("unable to fetch code from context")
+// 		return errors.New("unable to fetch code from context")
+// 	}
+// 	createdBy, ok := createdByVal.(string)
+// 	if !ok {
+// 		log.Println("unable to convert into string")
+// 		return errors.New("unable to convert into string")
+// 	}
+
+//		collection := db.OpenCollections(medicalRecordCollection)
+//		data["updatedAt"] = time.Now()
+//		data["UpdatedBy"] = createdBy
+//		filter := bson.M{
+//			"code": medicalRecordId,
+//		}
+//		update := bson.M{
+//			"$set": data,
+//		}
+//		updated, err := db.UpdateOne(c, collection, filter, update)
+//		if err != nil {
+//			log.Println("Error while updating medicalRecord by Receptionist:", err)
+//			return err
+//		}
+//		log.Println("Updated: ", updated.ModifiedCount)
+//		return nil
+//	}
 func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string]interface{}) (string, error) {
 	val := ""
 	collectionVal, ok := c.Get("collection")
@@ -136,20 +222,27 @@ func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string
 		log.Println("Error for type assertion error to get collection. ")
 		return val, errors.New("Error while type assertion to get collection")
 	}
-
+	msg := "Updated successfully"
 	switch collection {
 	case nurseCollection:
 		if err := UpdateMedicalRecordByNurse(c, medicalRecordId, data); err != nil {
 			return "", err
 		}
-		return "Updated by nurse", nil
+		log.Println("Updated by nurse")
+		return msg, nil
 
 	case doctorCollection:
 		if err := UpdateMedicalRecordByDoctor(c, medicalRecordId, data); err != nil {
 			return "", err
 		}
-		return "Updated by doctor", nil
-
+		log.Println("Updated by doctor")
+		return msg, nil
+	// case receptionistCollection:
+	// 	if err := UpdateMedicalRecordByReceptionist(c, medicalRecordId, data); err != nil {
+	// 		return "", err
+	// 	}
+	// 	log.Println("Updated by receptionist")
+	// 	return msg, nil
 	default:
 		return "", errors.New("Unauthorized role")
 	}

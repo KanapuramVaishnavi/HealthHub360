@@ -141,7 +141,7 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
 		if err := trimIfExists(data, f); err != nil {
-			log.Println("Error from ")
+			log.Println("Error from trimIfExists")
 			return err
 		}
 	}
