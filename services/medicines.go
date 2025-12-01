@@ -7,6 +7,7 @@ import (
 	"log"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error) {
@@ -69,4 +70,38 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		return "", err
 	}
 	return "Successfully created", nil
+}
+
+func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
+	coll := medicineCollection
+	key, err := redis.CreateCacheKey(coll, medicineId)
+	if err != nil {
+		log.Println("Error from createCacheKey: ", err)
+		return nil, err
+	}
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	createdBy, ok := c.Get("code")
+	if !ok {
+		log.Println("Error while fetching the code")
+	}
+	if err == nil && exists {
+		if createdBy.(string) != cached["createdBy"].(string) {
+			log.Println("Receptionist does not have access")
+			return nil, errors.New("This receptionist does not have access")
+		}
+		return cached, nil
+	}
+	medicine := make(map[string]interface{})
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code": medicineId,
+	}
+	err = db.FindOne(c, collection, filter, medicine)
+	if err != nil {
+		log.Println("Error from findOne function: ", err)
+		return nil, err
+	}
+	log.Println("MEDICINE :", medicine)
+	return medicine, nil
 }

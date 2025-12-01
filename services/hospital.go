@@ -125,7 +125,7 @@ func handleDOB(data map[string]interface{}) error {
 * Make it as update filter
  */
 func BuildUpdateFilter(data map[string]interface{}, createdBy string) map[string]interface{} {
-	data["createdBy"] = createdBy
+	// data["createdBy"] = createdBy
 	data["updatedBy"] = createdBy
 	data["updatedAt"] = time.Now()
 	updateFilter := bson.M{"$set": data}
