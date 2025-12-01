@@ -36,6 +36,7 @@ const (
 	medicalRecordCollection  = "MEDICAL_RECORD"
 	nurseCollection          = "NURSE"
 	medicineCollection       = "MEDICINES"
+	appointmentCollection    = "APPOINTMENT"
 )
 
 var ctx context.Context = context.Background()

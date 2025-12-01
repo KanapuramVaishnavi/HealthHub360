@@ -12,6 +12,8 @@ import (
 func Medicines(router *gin.Engine) {
 	medicines := router.Group("/medicines", authorization.JWTAuth())
 	medicines.POST("/create", authorization.Authorize("medicines", "create"), CreateMedicines)
+	medicines.GET("/fetch/:medicalCode", authorization.Authorize("medicines", "view"), FetchMedicineByCode)
+	// medicines.PATCH("/update/:medicalCode", authorization.Authorize("medicines", "update"), UpdateMedicines)
 }
 func CreateMedicines(c *gin.Context) {
 	var data map[string]interface{}
@@ -25,4 +27,14 @@ func CreateMedicines(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, util.SuccessResponse(msg))
+}
+
+func FetchMedicineByCode(c *gin.Context) {
+	medicineId := c.Param("medicalCode")
+	medicine, err := services.FetchMedicineByCode(c, medicineId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(medicine))
 }

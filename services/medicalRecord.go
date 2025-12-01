@@ -118,13 +118,20 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 		return err
 	}
 	log.Println("Updated: ", updated.ModifiedCount)
+	updatedRecord := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, updatedRecord)
+	if err != nil {
+		log.Println("Error from findOne after updating", err)
+		return err
+	}
+	refreshCache(c, medicalRecordCollection, medicalRecordId, updatedRecord)
 	return nil
 }
 func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 	codeVal, ok := c.Get("code")
 	if !ok {
-		log.Println("Error while fetching collection from context. ")
-		return errors.New("Error while fetching collection from context")
+		log.Println("Error while fetching  from context. ")
+		return errors.New("Error while fetching  from context")
 	}
 	code, ok := codeVal.(string)
 	if !ok {
@@ -170,6 +177,13 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 		return err
 	}
 	log.Println("Updated: ", updated.ModifiedCount)
+	updatedRecord := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, updatedRecord)
+	if err != nil {
+		log.Println("Error from findOne after updating", err)
+		return err
+	}
+	refreshCache(c, medicalRecordCollection, medicalRecordId, updatedRecord)
 	return nil
 }
 

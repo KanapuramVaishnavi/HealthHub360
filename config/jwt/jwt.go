@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"time"
@@ -39,6 +40,7 @@ func GenerateJWT(code, email, roleCode, collectionName, tenantId string, isSuper
 	}
 
 	expDuration := time.Duration(expDays) * 24 * time.Hour
+	log.Println("exp:", expDuration)
 	claims := &JWTClaim{
 		Code:         code,
 		Email:        email,
