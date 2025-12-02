@@ -139,7 +139,6 @@ func FindAll(c context.Context, collection *mongo.Collection, filter interface{}
 	if filter == nil {
 		filter = bson.M{}
 	}
-
 	cursor, err := collection.Find(c, filter, opts)
 	if err != nil {
 		return nil, err

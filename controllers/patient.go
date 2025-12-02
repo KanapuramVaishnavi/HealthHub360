@@ -13,7 +13,9 @@ func Patient(router *gin.Engine) {
 	patient := router.Group("/patient", authorization.JWTAuth())
 	patient.POST("/create", authorization.Authorize("patient", "create"), CreatePatient)
 	patient.GET("/fetch/:patientId", authorization.Authorize("patient", "view"), FetchPatientByCode)
-	// patient.PATCH("/update/:patientId", authorization.Authorize("patient", "update"), UpdatePatient)
+	patient.PATCH("/update/:patientId", authorization.Authorize("patient", "update"), UpdatePatientByCode)
+	patient.GET("/fetchAll", authorization.Authorize("patient", "view"), FetchAllPatients)
+	patient.DELETE("/delete/:code", authorization.Authorize("patient", "delete"), DeletePatient)
 }
 
 func CreatePatient(c *gin.Context) {
@@ -41,12 +43,36 @@ func FetchPatientByCode(c *gin.Context) {
 	c.JSON(http.StatusOK, util.SuccessResponse(patient))
 }
 
-// func UpdatePatient(c *gin.Context) {
-// 	patientId := c.Param("patientId")
-// 	msg, err := services.UpdatePatient(c, patientId)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
-// 		return
-// 	}
-// 	c.JSON(http.StatusOK, util.SuccessResponse(msg))
-// }
+func UpdatePatientByCode(c *gin.Context) {
+	patientId := c.Param("patientId")
+	data := make(map[string]interface{})
+	if err := c.BindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	msg, err := services.UpdatePatientByCode(c, patientId, data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
+}
+
+func FetchAllPatients(c *gin.Context) {
+	patients, err := services.FetchAllPatients(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(patients))
+}
+
+func DeletePatient(c *gin.Context) {
+	patientId := c.Param("patientId")
+	msg, err := services.DeletePatient(c, patientId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
+}

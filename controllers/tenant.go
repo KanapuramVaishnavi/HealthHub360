@@ -14,6 +14,7 @@ func Tenant(router *gin.Engine) {
 	tenant := router.Group("/tenant", authorization.JWTAuth())
 	{
 		tenant.POST("/create", authorization.Authorize("tenant", "create"), CreateTenant)
+		tenant.GET("/fetch/:code", authorization.Authorize("tenant", "view"), FetchTenantByCode)
 		tenant.GET("/fetchAll", authorization.Authorize("tenant", "view"), FetchAll)
 		tenant.PUT("/update/:code", authorization.Authorize("tenant", "update"), UpdateTenant)
 		tenant.DELETE("/delete/:code", authorization.Authorize("Tenant", "delete"), DeleteTenantByCode)
@@ -31,6 +32,16 @@ func CreateTenant(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, util.SuccessResponse("Created successfully"))
+}
+
+func FetchTenantByCode(c *gin.Context) {
+	tenantId := c.Param("code")
+	tenant, err := services.FetchTenantByCode(c, tenantId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(tenant))
 }
 
 /*

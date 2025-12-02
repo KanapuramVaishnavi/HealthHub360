@@ -228,11 +228,11 @@ func UpdateUserToken(ctx context.Context, collectionName string, code string, to
 * GenerateJWT
 * UpdateToken
  */
-func Login(c *gin.Context, data map[string]interface{}) (string, error) {
+func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{}, error) {
 
 	if err := validateLoginInput(data); err != nil {
 		log.Println("error from validation input for the login")
-		return "", err
+		return nil, err
 	}
 
 	filter := buildLoginFilter(data)
@@ -240,7 +240,7 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 	loginDoc, err := FetchUser(context.Background(), filter)
 	if err != nil {
 		log.Println("error from the fetchUser function:", err)
-		return "", err
+		return nil, err
 	}
 	inputPassword := data["password"].(string)
 	dbPassword := loginDoc["password"].(string)
@@ -253,11 +253,11 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 	userDoc, err := FetchUserByRole(c, collection, code)
 	if err != nil {
 		log.Println("Error from FetchUserByRole", err)
-		return "", err
+		return nil, err
 	}
 	if userDoc["reset"] == true {
 		if err := ValidateOTPExpiry(userDoc); err != nil {
-			return "", err
+			return nil, err
 		}
 		log.Println("while password is otp")
 	}
@@ -266,7 +266,7 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 		attempts := IncrementLoginAttempts(code)
 		if err := UpdateUserAttempts(c, collection, code, attempts); err != nil {
 			log.Println("Error while updating the attempts in collection")
-			return "", err
+			return nil, err
 		}
 		if attempts >= 3 {
 			// Disable account in MongoDB
@@ -276,11 +276,11 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 				bson.M{"$set": bson.M{"isBlocked": true}},
 			)
 			log.Println("Error while updating the collection for isActive field")
-			return "", errors.New("account disabled due to 3 invalid attempts")
+			return nil, errors.New("account disabled due to 3 invalid attempts")
 		}
 
 		log.Println("Error from IncrementLoginattempts")
-		return "", errors.New("invalid password")
+		return nil, errors.New("invalid password")
 	}
 
 	roleCode := userDoc["roleCode"].(string)
@@ -298,14 +298,19 @@ func Login(c *gin.Context, data map[string]interface{}) (string, error) {
 	token, err := jwt.GenerateJWT(code, email, roleCode, collection, tenantId, isSuperAdmin)
 	if err != nil {
 		log.Println("Error while generating the token")
-		return "", err
+		return nil, err
 	}
 
 	if err := UpdateUserToken(c, collection, code, token); err != nil {
 		log.Println("Error while updating the collection with token field")
-		return "", err
+		return nil, err
 	}
-	return "login successful", nil
+	user, err := FetchUserByRole(c, collection, code)
+	if err != nil {
+		log.Println("Error from FetchUserByRole", err)
+		return nil, err
+	}
+	return user, nil
 }
 
 /*

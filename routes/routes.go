@@ -19,4 +19,5 @@ func Routes(r *gin.Engine) {
 	controllers.Nurse(r)
 	controllers.Medicines(r)
 	controllers.Appointment(r)
+	controllers.Pharmacist(r)
 }
