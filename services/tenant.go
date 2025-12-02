@@ -71,6 +71,33 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 	return nil
 }
 
+func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{}, error) {
+	coll := tenantCollection
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code": tenantId,
+	}
+	key, err := redis.CreateCacheKey(coll, tenantId)
+	if err != nil {
+		log.Println("Error from createCacheKey")
+		return nil, err
+	}
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err != nil && exists {
+		return cached, nil
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from FindOne: ", err)
+		return nil, err
+	}
+	err = redis.SetCache(c, key, result)
+	log.Println("Unable to set in cache")
+	return result, nil
+}
+
 /*
 It returns an array of documnets
 where it matches with the filter given with it and perform
@@ -168,7 +195,7 @@ func parseTenantUpdateFields(c *gin.Context, updateData map[string]interface{}) 
 	}
 
 	if v, ok := updateData["dob"].(string); ok && strings.TrimSpace(v) != "" {
-		modDob, err := NormalizeDOB(v)
+		modDob, err := NormalizeDate(v)
 		if err != nil {
 			return nil, errors.New("invalid dob format")
 		}

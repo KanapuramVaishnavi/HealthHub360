@@ -72,7 +72,7 @@ func CreateDailySlots(ctx context.Context, doctorId string, hospitalId string, d
 		slots = Generate30MinSlots("10:00", "18:00")
 	}
 	dateStr := date.Format("02-01-2006")
-	dateModified, err := services.NormalizeDOB(dateStr)
+	dateModified, err := services.NormalizeDate(dateStr)
 	if err != nil {
 		log.Println("Error while normalizing the date in creating slots: ", err)
 		return err

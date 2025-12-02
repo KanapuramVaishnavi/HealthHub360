@@ -12,11 +12,11 @@ import (
 )
 
 /*
-It will Create receptionist by making certain validatiosn by generating the code
+It will Create pharmacist by making certain validatiosn by generating the code
 and fetching tennatid from the hospitaldoc
 reespectively .Finally it sent email to the respected person states that validation is completed
 */
-func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
+func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
 	err := ValidateUserInput(body)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
@@ -64,8 +64,8 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 		return err
 	}
 
-	subject := "Your Receptionist OTP Verification"
-	mbody := fmt.Sprintf("Hello %s,\n\nYour OTP for Receptionest verification is: %s\n\nThank you!", body["name"].(string), otp)
+	subject := "Your Pharmacist OTP Verification"
+	mbody := fmt.Sprintf("Hello %s,\n\nYour OTP for Pharmacist verification is: %s\n\nThank you!", body["name"].(string), otp)
 
 	err = SendOTPToMail(body["email"].(string), subject, mbody)
 	if err != nil {
@@ -83,9 +83,12 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 * Check whether the tenantId matches with the input tenantId
 * If comparision works then return the docs
  */
-func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{}, error) {
-
-	coll := receptionistCollection
+func FetchPharmacistByCode(c *gin.Context, code string) (map[string]interface{}, error) {
+	sa, err := IsSuperAdmin(c)
+	if err != nil {
+		return nil, err
+	}
+	coll := pharmacistCollection
 	key, err := redis.CreateCacheKey(coll, code)
 	if err != nil {
 		log.Println("Error creating cache key:", err)
@@ -99,7 +102,7 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
 
-	if err == nil && exists {
+	if err == nil && exists && !sa {
 		tenantIdFromCache, ok := cached["tenantId"].(string)
 		if !ok {
 			return nil, errors.New("cached doctor missing tenantId")
@@ -107,6 +110,9 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		if tenantId != tenantIdFromCache {
 			return nil, errors.New("tenant not allowed to fetch this doctor")
 		}
+	}
+	if err == nil && exists {
+		log.Println("From cache")
 		return cached, nil
 	}
 	result := make(map[string]interface{})
@@ -120,9 +126,11 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		log.Println("Error from findOne function")
 		return nil, errors.New("Error from the findOne function:")
 	}
-	value := result["tenantId"].(string)
-	if value != tenantId {
-		return nil, errors.New("This User admin doesnot have access")
+	if !sa {
+		value := result["tenantId"].(string)
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access")
+		}
 	}
 	err = redis.SetCache(c, key, result)
 	if err != nil {
@@ -134,10 +142,10 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 }
 
 /*
-It gives the all the receptionist on the database
+It gives the all the pharmacist on the database
 */
-func FetchAllReceptionist(c *gin.Context, tenantId string) ([]interface{}, error) {
-	collection := db.OpenCollections(receptionistCollection)
+func FetchAllPharmacist(c *gin.Context, tenantId string) ([]interface{}, error) {
+	collection := db.OpenCollections(pharmacistCollection)
 	filter := bson.M{"tenantId": tenantId}
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
@@ -152,7 +160,7 @@ func FetchAllReceptionist(c *gin.Context, tenantId string) ([]interface{}, error
 * Get the code from claims which is createdBy field
 * Update based on the update and search filters
  */
-func UpdateReceptionist(c *gin.Context, data map[string]interface{}, code string) error {
+func UpdatePharmacist(c *gin.Context, data map[string]interface{}, code string) error {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
 		if err := trimIfExists(data, f); err != nil {
@@ -172,7 +180,7 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, code string
 	filter := bson.M{
 		"createdBy": code,
 	}
-	collection := db.OpenCollections(receptionistCollection)
+	collection := db.OpenCollections(pharmacistCollection)
 	value := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, value)
 	if err != nil {
@@ -184,8 +192,8 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, code string
 	log.Println(val)
 	log.Println(createdBy)
 	if val != createdBy {
-		log.Println("This Receptionist does not have access to update")
-		return errors.New("This Receptionist doesnot have access")
+		log.Println("This Pharmacist does not have access to update")
+		return errors.New("This Pharmacist doesnot have access")
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
@@ -200,4 +208,47 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, code string
 	refreshCache(c, receptionistCollection, code, result)
 
 	return nil
+}
+
+/*
+Delete the Pharmacist from the pharmacist Collection
+*/
+func DeletePharmacist(c *gin.Context, code string) (string, error) {
+	coll := pharmacistCollection
+	key, err := redis.CreateCacheKey(coll, code)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return "", err
+	}
+	collection := db.OpenCollections(pharmacistCollection)
+	hospitalCodeRaw, ok := c.Get("code")
+	if !ok {
+		log.Println("Unable to fetch code from the context")
+		return "", errors.New("Error unable to fetch code from the context")
+	}
+	hospitalCode, ok := hospitalCodeRaw.(string)
+	if !ok {
+		return "", errors.New("Unable to get hospitalCode from the context")
+	}
+	filter := bson.M{
+		"code": code,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function: ", err)
+		return "", err
+	}
+	val := result["createdBy"].(string)
+	if val != hospitalCode {
+		log.Println("This hospital admin doesnot have access")
+		return "", errors.New("This hospital admin doesnot have access")
+	}
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		return "", err
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	msg := fmt.Sprintf("The Pharamacist %s deleted and the count is %d", code, deleted)
+	return msg, nil
 }

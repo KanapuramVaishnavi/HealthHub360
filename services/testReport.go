@@ -1,0 +1,183 @@
+package services
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
+	coll := testReportCollection
+
+	patient, err := FetchPatientByCode(c, patientId)
+	if err != nil {
+		return nil, errors.New("error fetching patient by code")
+	}
+
+	appointmentId, err := getLatestAppointmentID(patient)
+	if err != nil {
+		return nil, err
+	}
+
+	latestApp, err := FetchAppointmentByCode(c, appointmentId)
+	if err != nil {
+		return nil, err
+	}
+
+	medicalRecordId := latestApp["medicalId"].(string)
+	medicalRecord, err := FetchMedicalRecordByCode(c, medicalRecordId)
+	if err != nil {
+		return nil, err
+	}
+
+	testlist, err := getMedicalRecordTestList(medicalRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	rawDoctorId, ok := latestApp["doctorId"]
+	if !ok {
+		return nil, errors.New("doctorId missing in appointment")
+	}
+	doctorId, ok := rawDoctorId.(string)
+	if !ok {
+		return nil, errors.New("doctorId format invalid")
+	}
+
+	var reportCodes []string
+	for _, testId := range testlist {
+		code, err := createSingleTestReport(c, coll, testId, patientId, doctorId)
+		if err != nil {
+			return nil, err
+		}
+		reportCodes = append(reportCodes, code)
+	}
+
+	if err := updateMedicalRecordWithReports(c, medicalRecordId, reportCodes); err != nil {
+		return nil, err
+	}
+
+	return reportCodes, nil
+}
+
+// func FetchTestReportsofPatient(c *gin.Context, patientId string) ([]map[string]interface{}, error) {
+// 	filter := bson.M{
+// 		"patientId": patientId,
+// 	}
+// 	coll := db.OpenCollections(testReportCollection)
+// 	testReports, err := db.FindAll(c, coll)
+// }
+
+func getLatestAppointmentID(patient map[string]interface{}) (string, error) {
+	rawApps, ok := patient["appointment"]
+	if !ok {
+		return "", errors.New("appointments missing in patient")
+	}
+
+	apps, ok := rawApps.([]interface{})
+	if !ok {
+		return "", errors.New("appointments format invalid")
+	}
+	if len(apps) == 0 {
+		return "", errors.New("no appointments found")
+	}
+
+	appointmentId, ok := apps[len(apps)-1].(string)
+	if !ok {
+		return "", errors.New("invalid appointmentId format")
+	}
+
+	return appointmentId, nil
+}
+
+func getMedicalRecordTestList(medicalRecord map[string]interface{}) ([]string, error) {
+	rawTestList, ok := medicalRecord["testList"]
+	if !ok {
+		return nil, errors.New("testList missing in medicalRecord")
+	}
+
+	rawList, err := normalizeMongoArray(rawTestList)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []string
+	for _, v := range rawList {
+		s, ok := v.(string)
+		if !ok {
+			return nil, errors.New("testId must be string")
+		}
+		result = append(result, s)
+	}
+
+	return result, nil
+}
+
+func normalizeMongoArray(raw interface{}) ([]interface{}, error) {
+	switch v := raw.(type) {
+	case primitive.A:
+		return []interface{}(v), nil
+	case []interface{}:
+		return v, nil
+	case []string:
+		out := []interface{}{}
+		for _, s := range v {
+			out = append(out, s)
+		}
+		return out, nil
+	case []primitive.M:
+		out := []interface{}{}
+		for _, m := range v {
+			out = append(out, m)
+		}
+		return out, nil
+	case []primitive.ObjectID:
+		out := []interface{}{}
+		for _, id := range v {
+			out = append(out, id.Hex())
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("unsupported array type: %T", v)
+	}
+}
+
+func createSingleTestReport(c *gin.Context, coll interface{}, testId string, patientId string, doctorId string) (string, error) {
+	dummyTest, err := FetchTestByCode(c, testId)
+	if err != nil {
+		return "", err
+	}
+
+	testReport := map[string]interface{}{
+		"testName":  dummyTest["testName"],
+		"price":     dummyTest["price"],
+		"patientId": patientId,
+		"doctorId":  doctorId,
+	}
+
+	collName := coll.(string)
+	code, err := GenerateEmpCode(collName)
+	if err != nil {
+		return "", err
+	}
+	testReport["code"] = code
+
+	if err := CacheUserInRedis(c, code, testReport, collName); err != nil {
+		return "", err
+	}
+
+	if _, err := SaveUserToDB(collName, testReport); err != nil {
+		return "", err
+	}
+
+	return code, nil
+}
+
+func updateMedicalRecordWithReports(c *gin.Context, medicalRecordId string, reports []string) error {
+	data := map[string]interface{}{
+		"testReports": reports,
+	}
+	return UpdateMedicalRecordByNurse(c, medicalRecordId, data)
+}

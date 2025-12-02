@@ -27,29 +27,42 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		}
 		data[v] = int(number)
 	}
-	dateStr, err := NormalizeDOB(data["expiryDate"].(string))
+	dateStr, err := NormalizeDate(data["expiryDate"].(string))
 	if err != nil {
-		log.Println("Error from normalizeDOB: ", err)
+		log.Println("Error from normalizeDate: ", err)
 		return "", err
 	}
 	data["expiryDate"] = dateStr
-	createdByVal, ok := c.Get("code")
+	pharmacistIdVal, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to get code from context ")
 		return "", errors.New("Unable to get code from context")
 	}
-	createdBy, ok := createdByVal.(string)
+	pharmacistId, ok := pharmacistIdVal.(string)
 	if !ok {
 		log.Println("Type assertion error")
 		return "", errors.New("Type assertion error")
 	}
-	data["createdBy"] = createdBy
+	data["createdBy"] = pharmacistId
 	code, err := GenerateEmpCode(medicineCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
 		return "", err
 	}
 	data["code"] = code
+	pharmaColl := pharmacistCollection
+	pharmaCollection := db.OpenCollections(pharmaColl)
+	pharmacist := make(map[string]interface{})
+	pFilter := bson.M{
+		"code": pharmacistId,
+	}
+	err = db.FindOne(c, pharmaCollection, pFilter, pharmacist)
+	if err != nil {
+		log.Println("Error from findOne function: ", err)
+		return "", err
+	}
+	data["tenantId"] = pharmacist["tenantId"].(string)
+	data["hopitalId"] = pharmacist["createdBy"].(string)
 	log.Println("MEDICINE CODE:", code)
 	coll := medicineCollection
 	collection := db.OpenCollections(coll)
@@ -71,37 +84,162 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	}
 	return "Successfully created", nil
 }
+func fetchMedicineFromDB(c *gin.Context, medicineId string, key string,
+	collFromContext string, userData map[string]interface{},
+	tenantId, code string, isSuperAdmin bool) (map[string]interface{}, error) {
 
-func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
-	coll := medicineCollection
-	key, err := redis.CreateCacheKey(coll, medicineId)
+	coll := db.OpenCollections(medicineCollection)
+
+	result := make(map[string]interface{})
+	filter := bson.M{"code": medicineId}
+
+	err := db.FindOne(c, coll, filter, result)
 	if err != nil {
-		log.Println("Error from createCacheKey: ", err)
+		return nil, errors.New("record not found")
+	}
+
+	if err := canAccess(collFromContext, userData, result, tenantId, code, isSuperAdmin); err != nil {
 		return nil, err
 	}
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-	createdBy, ok := c.Get("code")
-	if !ok {
-		log.Println("Error while fetching the code")
+
+	_ = redis.SetCache(c, key, result)
+
+	return result, nil
+}
+func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
+
+	coll := medicineCollection
+	key, _ := redis.CreateCacheKey(coll, medicineId)
+
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	collFromContext := c.GetString("collection")
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+
+	collectionFromContext := db.OpenCollections(collFromContext)
+	userData := make(map[string]interface{})
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
 	}
-	if err == nil && exists {
-		if createdBy.(string) != cached["createdBy"].(string) {
-			log.Println("Receptionist does not have access")
-			return nil, errors.New("This receptionist does not have access")
+
+	if cached, exists, err := checkCacheAccess(
+		c, key, collFromContext, userData, tenantId, code, isSuperAdmin,
+	); exists {
+		return cached, err
+	}
+
+	return fetchMedicineFromDB(c, medicineId, key,
+		collFromContext, userData, tenantId, code, isSuperAdmin)
+}
+
+func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
+	pharmacistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return nil, err
+	}
+	coll := medicineCollection
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"createdBy": pharmacistId,
+	}
+	medicines, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from findAll: ", err)
+		return nil, err
+	}
+	if len(medicines) == 0 {
+		log.Println("This user does not have access")
+		return nil, errors.New("This user does not have access")
+	}
+	return medicines, nil
+}
+
+func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interface{}) (string, error) {
+	pharmacistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return "", err
+	}
+	fields := []string{"name", "dosage", "expiryDate"}
+	for _, field := range fields {
+		err := trimIfExists(data, field)
+		if err != nil {
+
+			log.Println("Error from trimIfExists: ", err)
+			return "", err
 		}
-		return cached, nil
 	}
-	medicine := make(map[string]interface{})
+	intFields := []string{"noOfStrips", "tabletsPerStrip"}
+	for _, field := range intFields {
+		number, ok := data[field].(float64)
+		if ok {
+			data[field] = int(number)
+		}
+	}
+	coll := medicineCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
 		"code": medicineId,
 	}
-	err = db.FindOne(c, collection, filter, medicine)
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne:", err)
+		return "", err
+	}
+	if pharmacistId != result["createdBy"].(string) {
+		log.Println("This pharmacist doesnot have access")
+		return "", errors.New("This pharamcist does not have access")
+	}
+	update := bson.M{
+		"$set": data,
+	}
+	updated, err := db.UpdateOne(c, collection, filter, update)
+	if err != nil {
+		log.Println("Error from updateOne:", err)
+		return "", err
+	}
+	log.Println("updated medicine count: ", updated.ModifiedCount)
+	updatedMedicine := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, updatedMedicine)
+	if err != nil {
+		log.Println("Error from findOne:", err)
+		return "", err
+	}
+	refreshCache(c, coll, medicineId, updatedMedicine)
+	return "Updated successfully", nil
+}
+
+func DeleteMedicine(c *gin.Context, medicineId string) (string, error) {
+	pharmacistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return "", err
+	}
+	coll := medicineCollection
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code":      medicineId,
+		"createdBy": pharmacistId,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
 		log.Println("Error from findOne function: ", err)
-		return nil, err
+		return "", err
 	}
-	log.Println("MEDICINE :", medicine)
-	return medicine, nil
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from deleteOne: ", err)
+		return "", err
+	}
+	log.Println("DeletedCount: ", deleted.DeletedCount)
+	if deleted.DeletedCount == 0 {
+		log.Println("This pharmacist doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	return "Deleted successfully", nil
 }

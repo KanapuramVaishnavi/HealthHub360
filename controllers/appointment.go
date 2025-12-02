@@ -38,6 +38,11 @@ func CreateAppointment(c *gin.Context) {
 	c.JSON(200, util.SuccessResponse(response))
 }
 
+/*
+* Get appointmentId from param
+* Bind the data from the input document
+* Pass to the service
+ */
 func UpdateAppointment(c *gin.Context) {
 	appointmentId := c.Param("appointmentId")
 	var data map[string]interface{}
@@ -52,6 +57,11 @@ func UpdateAppointment(c *gin.Context) {
 	}
 	c.JSON(200, util.SuccessResponse(updated))
 }
+
+/*
+* Fetch appointmentIf from context
+* Pass to services
+ */
 func FetchAppointmentByCode(c *gin.Context) {
 	appointmentId := c.Param("appointmentId")
 	appointment, err := services.FetchAppointmentByCode(c, appointmentId)
@@ -62,6 +72,9 @@ func FetchAppointmentByCode(c *gin.Context) {
 	c.JSON(200, util.SuccessResponse(appointment))
 }
 
+/*
+* FetchAllAppointments pass to the services
+ */
 func FetchAllAppointments(c *gin.Context) {
 	appointments, err := services.FetchAllAppointment(c)
 	if err != nil {
@@ -70,6 +83,11 @@ func FetchAllAppointments(c *gin.Context) {
 	}
 	c.JSON(200, util.SuccessResponse(appointments))
 }
+
+/*
+* Get appointmentId from param
+* Pass to the services
+ */
 func DeleteAppointmentByCode(c *gin.Context) {
 	appointmentId := c.Param("appointmentId")
 	data, err := services.DeleteAppointmentByCode(c, appointmentId)

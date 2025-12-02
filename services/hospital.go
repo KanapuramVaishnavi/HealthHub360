@@ -111,7 +111,7 @@ func handleDOB(data map[string]interface{}) error {
 		return err
 	}
 
-	normalized, err := NormalizeDOB(dobStr)
+	normalized, err := NormalizeDate(dobStr)
 	if err != nil {
 		return err
 	}

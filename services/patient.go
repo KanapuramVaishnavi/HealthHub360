@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -140,4 +141,135 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 		return nil, err
 	}
 	return result, nil
+}
+
+func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]interface{}) (string, error) {
+	val := ""
+	receptionistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return val, err
+	}
+	fields := []string{"name", "email", "phoneNo", "dob", "admissionDate", "gender"}
+	for _, field := range fields {
+		err := trimIfExists(data, field)
+		if err != nil {
+			log.Println("Error from getTrimmedString: ", err)
+			return val, err
+		}
+	}
+	err = handleDOB(data)
+	if err != nil {
+		log.Println("Error from handleDOB", err)
+		return val, err
+	}
+	if admissionDateVal, ok := data["admissionDate"]; ok {
+		if dateStr, ok := admissionDateVal.(string); ok {
+			updatedAdmissionDate, err := NormalizeDate(dateStr)
+			if err != nil {
+				log.Println("Error from NormalizeDate:", err)
+				return val, err
+			}
+			data["admissionDate"] = updatedAdmissionDate
+		}
+	}
+	coll := patientCollection
+	key, err := redis.CreateCacheKey(coll, patientId)
+	if err != nil {
+		log.Println("Error from CreateCacheKey: ", key)
+	}
+	collection := db.OpenCollections(coll)
+
+	filter := bson.M{
+		"code": patientId,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return val, err
+	}
+	createdByVal, ok := result["createdBy"]
+	if !ok {
+		log.Println("Error whil fetching createdBy from patient")
+		return val, errors.New("Error whil fetching createdBy from patient")
+	}
+	if receptionistId != createdByVal.(string) {
+		log.Println("This receptionist doesnot have access")
+		return val, errors.New("This recptionist doesnot have access")
+	}
+	data["updatedBy"] = receptionistId
+	data["updatedAt"] = time.Now()
+	update := bson.M{
+		"$set": data,
+	}
+	updated, err := db.UpdateOne(c, collection, filter, update)
+	if err != nil {
+		log.Println("Error from updateOne: ", err)
+		return val, err
+	}
+	log.Println("Updated patient: ", updated.ModifiedCount)
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return val, err
+	}
+	refreshCache(c, coll, patientId, result)
+	return "Updated Successfully", nil
+}
+
+func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
+	receptionistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext", err)
+		return nil, err
+	}
+	filter := bson.M{
+		"createdBy": receptionistId,
+	}
+	coll := patientCollection
+	collection := db.OpenCollections(coll)
+	patients, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from findall:", err)
+		return nil, err
+	}
+	log.Println("Patients: ", patients)
+	return patients, nil
+}
+
+func DeletePatient(c *gin.Context, patientId string) (string, error) {
+	receptionistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return "", err
+	}
+	filter := bson.M{
+		"code":      patientId,
+		"createdBy": receptionistId,
+	}
+	coll := patientCollection
+	collection := db.OpenCollections(coll)
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne function", err)
+		return "", err
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from deleteOne: ", err)
+		return "", err
+	}
+	log.Println("Deleted:", deleted.DeletedCount)
+	if deleted.DeletedCount == 0 {
+		log.Println("This user doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	key, err := redis.CreateCacheKey(coll, patientId)
+	if err != nil {
+		log.Println("Error from createCacheKey", err)
+	}
+	redis.DeleteCache(c, key)
+	return "Deleted successfully", nil
 }

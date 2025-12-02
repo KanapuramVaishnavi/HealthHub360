@@ -27,7 +27,7 @@ func PrepareSuperAdmin(input map[string]interface{}, name string, email string, 
 	if !ok {
 		return errors.New("DOB not provided")
 	}
-	modifiedDob, err := NormalizeDOB(dob)
+	modifiedDob, err := NormalizeDate(dob)
 	if err != nil {
 		return err
 	}

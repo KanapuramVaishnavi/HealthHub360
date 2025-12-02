@@ -1,0 +1,261 @@
+package services
+
+import (
+	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
+	"errors"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+)
+
+func ValidateTestInput(data map[string]interface{}) error {
+	fields := []string{"testname", "price"}
+	for _, f := range fields {
+		if err := getTrimmedString(data, f); err != nil {
+			log.Println("Error from getTrimmedString:", err)
+			return err
+		}
+	}
+	return nil
+}
+
+/*
+* Validate user inputs first
+* Fetch collection name from the roleCode given
+* Check the fields and Generate a code and then createdBy
+* Fetch tenantId from the hospital collection
+* Include tenantId and generate otp and hash the otp
+* Combine all the remaining data and prepare it
+* Save to db and cache
+* Send mail
+ */
+func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
+	val := ""
+	err := ValidateTestInput(data)
+	if err != nil {
+		log.Println("Error from ValidateUserInput:", err)
+		return val, err
+	}
+	collection := testCollection
+	userCodeVal, exists := c.Get("code")
+	if !exists {
+		log.Println("Error unable to get the code from the context")
+		return "", errors.New("missing creator code")
+	}
+	createdBy := userCodeVal.(string)
+	data["CreatedBy"] = createdBy
+	data["UpdatedBy"] = createdBy
+	data["CreatedAt"] = time.Now()
+	data["UpdatedAt"] = time.Now()
+	code, err := GenerateEmpCode(collection)
+	if err != nil {
+		log.Println("Error from GenerateEmpCode:", err)
+		return "", err
+	}
+	data["code"] = code
+	tenantId, err := GetTenantIdFromContext(c)
+	if err != nil {
+		log.Println("Error from getTenantIfFromToken: ", err)
+		return val, err
+	}
+	log.Println("tenantId from context: ", tenantId)
+
+	data["tenantId"] = tenantId
+	if err := CacheUserInRedis(c, code, data, collection); err != nil {
+		log.Println("Error from CacheUserInRedis: ", err)
+		return val, err
+	}
+	if _, err := SaveUserToDB(collection, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
+		return val, err
+	}
+	return "Test Creates Success", nil
+}
+
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the update and search filters
+ */
+func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error {
+	fields := []string{"testname", "price"}
+	for _, f := range fields {
+		if err := trimIfExists(data, f); err != nil {
+			log.Println("Error from ")
+			return err
+		}
+	}
+	if err := handleDOB(data); err != nil {
+		return err
+	}
+
+	hospitalCode, ok := c.Get("code")
+	if !ok {
+		return errors.New("unable to fetch code from context")
+	}
+	updateFilter := BuildUpdateFilter(data, hospitalCode.(string))
+	filter := bson.M{
+		"code": code,
+	}
+	collection := db.OpenCollections(testCollection)
+	value := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, value)
+	if err != nil {
+		log.Println("Error from the findOne function", err)
+		return err
+	}
+	log.Println(value)
+	val := value["createdBy"].(string)
+	log.Println(val)
+	log.Println(hospitalCode)
+	if val != hospitalCode {
+		log.Println("This test does not have access to update")
+		return errors.New("This test doesnot have access")
+	}
+	res, err := db.UpdateOne(c, collection, filter, updateFilter)
+	if err != nil {
+		log.Println("Error from updateOne:", err)
+		return err
+	}
+	log.Println(res.UpsertedCount)
+
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	refreshCache(c, hospitalCollection, code, result)
+
+	return nil
+}
+
+/*
+* Create a key to fetch from cache
+* Fetch from cache if found then extract tenantId and compare with the input tenantId
+* If not found go to db search for the document
+* Check whether the tenantId matches with the input tenantId
+* If comparision works then return the docs
+ */
+func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, error) {
+	coll := testCollection
+	key, err := redis.CreateCacheKey(coll, testId)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return nil, err
+	}
+	sa, err := IsSuperAdmin(c)
+	if err != nil {
+		return nil, err
+	}
+	tenantId, err := GetTenantIdFromContext(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken ", err)
+		return nil, err
+	}
+	log.Println("tenantId from token: ", tenantId)
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err == nil && exists && !sa {
+		tenantIdFromCache, ok := cached["tenantId"].(string)
+		if !ok {
+			return nil, errors.New("cached test missing tenantId")
+		}
+		if tenantId != tenantIdFromCache {
+			return nil, errors.New("tenant not allowed to fetch this test")
+		}
+	}
+	if err == nil && exists {
+		log.Println("From cache")
+		return cached, nil
+	}
+
+	result := make(map[string]interface{})
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code": testId,
+	}
+	err = db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne function", err)
+		return nil, errors.New("Error from the findOne function:")
+	}
+	if !sa {
+		value := result["tenantId"].(string)
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access because of tenantId mismatch")
+		}
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache")
+		return nil, err
+	}
+
+	return result, nil
+}
+
+/*
+* Make a filter
+* FindAll from the above filter
+ */
+func FetchAllTests(c *gin.Context, tenantId string) ([]interface{}, error) {
+	collection := db.OpenCollections(testCollection)
+	filter := bson.M{
+		"tenantId": tenantId,
+	}
+	result, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from the findAll function: ", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+/*
+* Get code from the token
+* Compare code with the createdBy from the result document found from filter
+* If comparision works well go for the delete
+* If not return no another hospital admin can have access to delete it
+ */
+func DeleteTest(c *gin.Context, code string) (string, error) {
+	coll := testCollection
+	key, err := redis.CreateCacheKey(coll, code)
+	if err != nil {
+		log.Println("Error creating cache key:", err)
+		return "", err
+	}
+	collection := db.OpenCollections(testCollection)
+	hospitalCodeRaw, ok := c.Get("code")
+	if !ok {
+		log.Println("Unable to fetch code from the context")
+		return "", errors.New("Error unable to fetch code from the context")
+	}
+	hospitalCode, ok := hospitalCodeRaw.(string)
+	if !ok {
+		return "", errors.New("Unable to get hospitalCode from the context")
+	}
+
+	filter := bson.M{
+		"code": code,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function: ", err)
+		return "", err
+	}
+	val := result["createdBy"].(string)
+	if val != hospitalCode {
+		log.Println("This hospital admin doesnot have access")
+		return "", errors.New("This hospital admin doesnot have access")
+	}
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		return "", err
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	msg := fmt.Sprintf("The test %s deleted and the count is %d", code, deleted)
+	return msg, nil
+}

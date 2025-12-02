@@ -11,9 +11,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+/*
+* Get code from the context
+* Return code
+ */
 func getReceptionistID(c *gin.Context) (interface{}, error) {
 	code, ok := c.Get("code")
 	if !ok {
@@ -23,6 +28,9 @@ func getReceptionistID(c *gin.Context) (interface{}, error) {
 	return code, nil
 }
 
+/*
+* Validate the fields that came from request
+ */
 func validateAppointmentInput(data map[string]interface{}) error {
 	fields := []string{"patientId", "reason", "symptoms", "date", "time"}
 	for _, f := range fields {
@@ -36,7 +44,7 @@ func validateAppointmentInput(data map[string]interface{}) error {
 
 /*
 * Search for receptionist and doctor
-* Compare both createdBy give access for the receptionist to view doctor
+* Compare both createdBy and give access for the receptionist to view doctor
 *
  */
 func CheckForPrivileges(c *gin.Context, receptionistId, doctorId string) (map[string]interface{}, error) {
@@ -178,6 +186,115 @@ func fetchDoctorSlot(c context.Context, coll *mongo.Collection, filter bson.M) (
 // }
 
 /*
+* Search for the slots in the given document
+* Based on the given time filter it
+* Then update several fields if match found
+* Update the doctorAvailability slots with the search filter as well as update filter
+ */
+func checkAndBookSlot(ctx context.Context, slotColl *mongo.Collection, doc map[string]interface{}, timeGiven, patientId string) error {
+	slotsList := []map[string]interface{}{}
+	switch raw := doc["slots"].(type) {
+	case primitive.A: // slot is primitive array
+		for _, v := range raw {
+			slotsList = append(slotsList, v.(map[string]interface{}))
+		}
+
+	case []interface{}: // normal array
+		for _, v := range raw {
+			slotsList = append(slotsList, v.(map[string]interface{}))
+		}
+
+	default:
+		return errors.New("Invalid slot type found in DB")
+	}
+
+	slotFound := false
+	for _, slot := range slotsList {
+		if slot["start"].(string) == timeGiven {
+			slotFound = true
+			if !slot["isAvailable"].(bool) {
+				return errors.New("Slot is not available")
+			}
+			if slot["isBooked"].(bool) {
+				return errors.New("Slot already booked")
+			}
+			break
+		}
+	}
+
+	if !slotFound {
+		return errors.New("Slot does not exist for this doctor")
+	}
+
+	update := bson.M{
+		"$set": bson.M{
+			"slots.$.patientId":   patientId,
+			"slots.$.isAvailable": false,
+			"slots.$.isBooked":    true,
+		},
+	}
+	filter := bson.M{
+		"doctorId":    doc["doctorId"],
+		"hospitalId":  doc["hospitalId"],
+		"date":        doc["date"],
+		"slots.start": timeGiven,
+	}
+	_, err := db.UpdateOne(ctx, slotColl, filter, update)
+	if err != nil {
+		log.Println("Error while updating slots availability when match found: ", err)
+	}
+	return err
+}
+
+/*
+* Generate medicalRecord code
+* Generate new medicalDocument
+* Insert new document in the medicalRecord db
+ */
+func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string) (string, error) {
+	medicalCode, err := GenerateEmpCode(medicalRecordCollection)
+	if err != nil {
+		log.Println("Error while generating medicalRecord code: ", err)
+		return "", err
+	}
+
+	medicalDoc := bson.M{
+		"code":          medicalCode,
+		"doctorId":      doctorId,
+		"nurseId":       nurseId,
+		"hospitalId":    hospitalId,
+		"patientId":     data["patientId"],
+		"appointmentId": data["code"],
+		"reason":        data["reason"],
+		"createdBy":     createdBy,
+		"updatedBy":     createdBy,
+		"createdAt":     time.Now(),
+		"updatedAt":     time.Now(),
+	}
+	_, err = GenerateAndHashOTP(data)
+	if err != nil {
+		log.Println("Error from GeneraeAndHashOTP:", err)
+		return "", err
+	}
+	coll := medicalRecordCollection
+	collection := db.OpenCollections(medicalRecordCollection)
+	if err := CacheUserInRedis(c, medicalCode, data, coll); err != nil {
+		log.Println("Error from CacheUserInRedis: ", err)
+		return "", err
+	}
+	if _, err := SaveUserToDB(coll, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
+		return "", err
+	}
+	_, err = db.CreateOne(ctx, collection, medicalDoc)
+	if err != nil {
+		log.Println("Error while creating createMedicalRecord: ", err)
+		return "", err
+	}
+	return medicalCode, err
+}
+
+/*
 * BuildAppointment which is newOne
 * Get all the fields
 * return the new appointment
@@ -202,6 +319,11 @@ func buildAppointment(data map[string]interface{}, doctorId, hospitalId, nurseId
 	}
 }
 
+/*
+* Get appointments from the patient
+* Update appointmnets with new appointmentId
+* Refresh the cache
+ */
 func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patientd string) error {
 	patCollection := db.OpenCollections(patientCollection)
 	patientFilter := bson.M{
@@ -246,6 +368,18 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 	refreshCache(c, patientCollection, patientd, updPatient)
 	return nil
 }
+
+/*
+* GetReceptionistID from context
+* Validate the input fields
+* Normalize the date
+* Check whether receptionist have access to create appointment for the doctorId
+* DoctorAvailability check for weeklyOff and weekend and get slots
+* Check the slot and book slot and update several fields
+* Build appointment
+* Update patient by appointment
+ */
+
 func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map[string]interface{}) (string, error) {
 
 	receptionistId, err := getReceptionistID(c)
@@ -260,9 +394,9 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", err
 	}
 
-	dateModified, err := NormalizeDOB(data["date"].(string))
+	dateModified, err := NormalizeDate(data["date"].(string))
 	if err != nil {
-		log.Println("Error from NormalizeDOB: ", err)
+		log.Println("Error from NormalizeDate: ", err)
 		return "", err
 	}
 
@@ -397,6 +531,12 @@ func fetchFromDB(c *gin.Context, appointmentId string, key string,
 
 	return result, nil
 }
+
+/*
+* Get appointmentId from the services
+* Get tenantId,code,collection,isSuperAdmin from the context
+* Fetch that user
+ */
 func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {
 
 	coll := appointmentCollection
@@ -409,7 +549,11 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 
 	collectionFromContext := db.OpenCollections(collFromContext)
 	userData := make(map[string]interface{})
-	db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
+	}
 
 	if cached, exists, err := checkCacheAccess(
 		c, key, collFromContext, userData, tenantId, code, isSuperAdmin,
@@ -629,8 +773,8 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		return "", errors.New("Error type assertion error for doctorId")
 	}
 	if receptionist != code {
-		log.Println("This receptionist doesnot have access to update the record")
-		return "", errors.New("This receptionist doesnot have access to update the record")
+		log.Println("This receptionist doesnot have access to update the appointment")
+		return "", errors.New("This receptionist doesnot have access to update the appointment")
 	}
 	collection := db.OpenCollections(appointmentCollection)
 	filter := bson.M{
@@ -651,6 +795,6 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		log.Println("Error from findOne after updating", err)
 		return "", err
 	}
-	refreshCache(c, medicalRecordCollection, appointmentId, updatedAppointment)
+	refreshCache(c, appointmentCollection, appointmentId, updatedAppointment)
 	return "updated", nil
 }

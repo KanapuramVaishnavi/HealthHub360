@@ -37,6 +37,10 @@ const (
 	nurseCollection          = "NURSE"
 	medicineCollection       = "MEDICINES"
 	appointmentCollection    = "APPOINTMENT"
+	testReportCollection     = "TEST_REPORT"
+	testCollection           = "TEST"
+	pharmacistCollection     = "PHARMACIST"
+	prescriptionCollection   = "PRESCRIPTION"
 )
 
 var ctx context.Context = context.Background()
@@ -52,6 +56,10 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
+	case "PRESCRIPTION":
+		prefix = "PRE"
+	case "PHARMACIST":
+		prefix = "PH"
 	case "MEDICINES":
 		prefix = "MED"
 	case "DOCTOR_TIMESLOTS":
@@ -193,7 +201,7 @@ Changes the DOB of any form into A Single DOB form
 and make it parse and format into our style of DOB
 checkes it its done return error if it is any invalid format
 */
-func NormalizeDOB(dobStr string) (string, error) {
+func NormalizeDate(dobStr string) (string, error) {
 	formats := []string{
 		"2006-01-02",
 		"02-01-2006",
@@ -473,7 +481,7 @@ Used before inserting the record in the database.
 func PrepareUser(data map[string]interface{}, code string, createdBy string, tenantId string) error {
 
 	dob, _ := data["dob"].(string)
-	modifiedDob, err := NormalizeDOB(dob)
+	modifiedDob, err := NormalizeDate(dob)
 	if err != nil {
 		log.Println("Error from normalize function", err)
 		return err
@@ -569,4 +577,29 @@ func GetTenantIdFromContext(c *gin.Context) (string, error) {
 		return val, errors.New("Type assertion for tenantId from token ")
 	}
 	return tenantId, nil
+}
+func IsSuperAdmin(c *gin.Context) (bool, error) {
+	IsSuperAdmin, ok := c.Get("isSuperAdmin")
+	if !ok {
+		log.Println("error from issuperAdmin")
+		return false, errors.New("error retrieving the data from context")
+	}
+	issuperadmin := IsSuperAdmin.(bool)
+	return issuperadmin, nil
+}
+
+func GetFromContext[T any](c *gin.Context, key string) (T, error) {
+	val, ok := c.Get(key)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("key '%s' not found in context", key)
+	}
+
+	value, ok := val.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("type assertion failed for key '%s'", key)
+	}
+
+	return value, nil
 }
