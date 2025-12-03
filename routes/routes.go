@@ -7,6 +7,10 @@ import (
 )
 
 func Routes(r *gin.Engine) {
+
+	//public
+
+	//privateroutes
 	controllers.Role(r)
 	controllers.Auth(r)
 	controllers.SuperAdmin(r)
@@ -20,4 +24,7 @@ func Routes(r *gin.Engine) {
 	controllers.Medicines(r)
 	controllers.Appointment(r)
 	controllers.Pharmacist(r)
+	controllers.Prescription(r)
+	controllers.TestReport(r)
+	controllers.Test(r)
 }

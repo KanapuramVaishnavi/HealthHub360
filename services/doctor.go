@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -61,9 +62,10 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from prepareUser :", err)
 		return val, err
 	}
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return val, err
+	key := util.DoctorKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -135,7 +137,18 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, hospitalCollection, code, result)
+	if err != nil {
+		log.Println("Error from findOne:", err)
+		return err
+	}
+	key := util.DoctorKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
 	return nil
 }
@@ -148,25 +161,8 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 * If comparision works then return the docs
  */
 func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{}, error) {
-
 	coll := doctorCollection
-	key, err := redis.CreateCacheKey(coll, doctorId)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
-
-	// codeVal, ok := c.Get("code")
-	// if !ok {
-	// 	log.Println("Error while fetching code from context")
-	// 	return nil, errors.New("Error while fetching code from context")
-	// }
-	// code, ok := codeVal.(string)
-	// if !ok {
-	// 	log.Println("Error while geting code type assertion")
-	// 	return nil, errors.New("Type assertion error")
-	// }
-
+	key := util.DoctorKey + doctorId
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)

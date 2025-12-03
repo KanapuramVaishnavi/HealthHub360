@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -251,7 +252,7 @@ func checkAndBookSlot(ctx context.Context, slotColl *mongo.Collection, doc map[s
 * Generate new medicalDocument
 * Insert new document in the medicalRecord db
  */
-func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string) (string, error) {
+func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string, tenantId string) (string, error) {
 	medicalCode, err := GenerateEmpCode(medicalRecordCollection)
 	if err != nil {
 		log.Println("Error while generating medicalRecord code: ", err)
@@ -264,6 +265,7 @@ func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId s
 		"nurseId":       nurseId,
 		"hospitalId":    hospitalId,
 		"patientId":     data["patientId"],
+		"tenantId":      tenantId,
 		"appointmentId": data["code"],
 		"reason":        data["reason"],
 		"createdBy":     createdBy,
@@ -278,9 +280,10 @@ func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId s
 	}
 	coll := medicalRecordCollection
 	collection := db.OpenCollections(medicalRecordCollection)
-	if err := CacheUserInRedis(c, medicalCode, data, coll); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return "", err
+	key := util.MedicalRecordKey + medicalCode
+	err = redis.SetCache(c, key, medicalDoc)
+	if err != nil {
+		log.Println("Error while caching new medicalRecord : ", err)
 	}
 	if _, err := SaveUserToDB(coll, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -324,10 +327,10 @@ func buildAppointment(data map[string]interface{}, doctorId, hospitalId, nurseId
 * Update appointmnets with new appointmentId
 * Refresh the cache
  */
-func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patientd string) error {
+func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patientId string) error {
 	patCollection := db.OpenCollections(patientCollection)
 	patientFilter := bson.M{
-		"code": data["patientId"].(string),
+		"code": patientId,
 	}
 	patient := make(map[string]interface{})
 	findOneErr := db.FindOne(c, patCollection, patientFilter, patient)
@@ -335,24 +338,30 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 		log.Println("Error from FindOne function: ", findOneErr)
 		return findOneErr
 	}
+	log.Println("Patient: ", patient)
+	log.Printf("patient appointments type %T", patient["appointments"])
+	val, ok := patient["appointments"].(primitive.A)
+	if !ok {
+		log.Println("Unable to fetch appointments")
+		return errors.New("Unable to fetch appointments")
+	}
 	var appointments []string
-	if val, ok := patient["appointment"]; ok && val != nil {
-		// Convert interface{} to []interface{}
-		if arr, ok := val.([]interface{}); ok {
-			for _, a := range arr {
-				if str, ok := a.(string); ok {
-					appointments = append(appointments, str)
-				}
-			}
+	for _, a := range val {
+		if str, ok := a.(string); ok {
+			appointments = append(appointments, str)
+		} else {
+			log.Println("Non-string value in appointments:", a)
 		}
 	}
+
 	appointments = append(appointments, appCode)
 	patientUpdate := bson.M{
 		"$set": bson.M{
-			"appointment": appointments,
+			"appointments": appointments,
 		},
 	}
 
+	log.Println("Appointments:", appointments)
 	updated, err := db.UpdateOne(c, patCollection, patientFilter, patientUpdate)
 	if err != nil {
 		log.Println("Error from UpdateOne: ", err)
@@ -365,7 +374,15 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 		log.Println("Error from FindOne function: ", findOneErr)
 		return findOneErr
 	}
-	refreshCache(c, patientCollection, patientd, updPatient)
+	key := util.PatientKey + patientId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error while deleting patient from cache: ", err)
+	}
+	err = redis.SetCache(c, key, updPatient)
+	if err != nil {
+		log.Println("Error while caching updated patient: ", err)
+	}
 	return nil
 }
 
@@ -429,16 +446,17 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", err
 	}
 	data["code"] = appCode
-	medicalCode, err := createMedicalRecord(c, data, doctorId, doctor["createdBy"].(string), nurseId, receptionistId.(string))
-	if err != nil {
-		return "", err
-	}
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIfFromToken", err)
 		return "", err
 	}
 	data["tenantId"] = tenantId
+	medicalCode, err := createMedicalRecord(c, data, doctorId, doctor["createdBy"].(string), nurseId, receptionistId.(string), tenantId)
+	if err != nil {
+		return "", err
+	}
+
 	hospitalId := doctor["createdBy"].(string)
 	newApp := buildAppointment(data, doctorId, hospitalId, nurseId, appCode, medicalCode, receptionistId.(string), dateModified)
 	patientErr := PatientUpdate(c, data, appCode, data["patientId"].(string))
@@ -454,11 +472,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", err
 	}
 	log.Println("inserted: ", inserted.InsertedID)
-	key, err := redis.CreateCacheKey(appointmentCollection, appCode)
-	if err != nil {
-		log.Println("Error from createCacheKey: ", err)
-		return "", err
-	}
+	key := util.AppointmentKey + appCode
 	cacheErr := redis.SetCache(c, key, newApp)
 	if cacheErr != nil {
 		log.Println("Error from setCache : ", cacheErr)
@@ -539,8 +553,7 @@ func fetchFromDB(c *gin.Context, appointmentId string, key string,
  */
 func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {
 
-	coll := appointmentCollection
-	key, _ := redis.CreateCacheKey(coll, appointmentId)
+	key := util.AppointmentKey + appointmentId
 
 	tenantId := c.GetString("tenantId")
 	code := c.GetString("code")
@@ -724,12 +737,7 @@ func DeleteAppointmentByCode(c *gin.Context, code string) (string, error) {
 		log.Println("Error from the deleteOne function: ", err)
 		return "", err
 	}
-	coll := appointmentCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return "", err
-	}
+	key := util.AppointmentKey + code
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		log.Println("Error from deleteCache:", err)
@@ -795,6 +803,20 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		log.Println("Error from findOne after updating", err)
 		return "", err
 	}
-	refreshCache(c, appointmentCollection, appointmentId, updatedAppointment)
+
+	key := util.ReceptionistKey + code
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old appointment cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated appoitment:", err)
+	}
 	return "updated", nil
 }

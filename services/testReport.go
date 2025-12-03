@@ -1,8 +1,11 @@
 package services
 
 import (
+	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -31,6 +34,7 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Println("Hdfgh0j")
 
 	testlist, err := getMedicalRecordTestList(medicalRecord)
 	if err != nil {
@@ -71,7 +75,7 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 // }
 
 func getLatestAppointmentID(patient map[string]interface{}) (string, error) {
-	rawApps, ok := patient["appointment"]
+	rawApps, ok := patient["appointments"]
 	if !ok {
 		return "", errors.New("appointments missing in patient")
 	}
@@ -164,10 +168,11 @@ func createSingleTestReport(c *gin.Context, coll interface{}, testId string, pat
 	}
 	testReport["code"] = code
 
-	if err := CacheUserInRedis(c, code, testReport, collName); err != nil {
-		return "", err
+	key := util.TestReportKey + code
+	err = redis.SetCache(c, key, testReport)
+	if err != nil {
+		log.Println("Error while caching new testReport: ", err)
 	}
-
 	if _, err := SaveUserToDB(collName, testReport); err != nil {
 		return "", err
 	}

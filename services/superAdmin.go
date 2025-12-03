@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -79,9 +80,10 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
-	if err := CacheUserInRedis(c, code, input, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return err
+	key := util.SuperAdminKey + code
+	err = redis.SetCache(c, key, input)
+	if err != nil {
+		log.Println("Error while caching new superAdmin: ", err)
 	}
 	if _, err := SaveUserToDB(collection, input); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -134,7 +136,14 @@ func UpdateSuperAdmin(c *gin.Context, update map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	refreshCache(c, superAdminCollection, code, updatedDoc)
+	key := util.SuperAdminKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, updatedDoc); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 	return nil
 }
 func ReteriveDoc(c *gin.Context) (map[string]interface{}, error) {
@@ -187,27 +196,4 @@ func updateSuperAdminInDB(code string, update bson.M) error {
 	}
 
 	return nil
-}
-
-/*
-refreshTenantCache removes any old cache entry and stores the updated tenant data in Redis.
-Cache failures are logged but not returned as errors (non-blocking).
-*/
-func refreshCache(c *gin.Context, collection string, code string, data map[string]interface{}) {
-
-	key, err := redis.CreateCacheKey(collection, code)
-	if err != nil {
-		log.Println("Failed creating tenant cache key:", err)
-		return
-	}
-
-	// Delete old cache entry
-	if err := redis.DeleteCache(c, key); err != nil {
-		log.Println("Failed deleting old tenant cache:", err)
-	}
-
-	// Set new cache entry
-	if err := redis.SetCache(c, key, data); err != nil {
-		log.Println("Failed caching updated tenant:", err)
-	}
 }

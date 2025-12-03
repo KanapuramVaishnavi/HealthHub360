@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -13,12 +14,7 @@ import (
 )
 
 func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[string]interface{}, error) {
-	coll := medicalRecordCollection
-	key, err := redis.CreateCacheKey(coll, medicalRecordId)
-	if err != nil {
-		log.Println("Error from CreateCacheKey: ", err)
-		return nil, err
-	}
+	key := util.MedicalRecordKey + medicalRecordId
 
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
@@ -29,17 +25,18 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
-	log.Println("From cache: ", cached)
-	tenantIdCache, ok := cached["tenantId"].(string)
-	if !ok {
-		fmt.Println("createdBy not found or invalid")
-		return nil, errors.New("Unable to get the CreatedBy field from cache")
-	}
-	if tenantIdCache != tenantId {
-		log.Println("Error from the tenant which is tenant doesnot have access")
-		return nil, errors.New("This tenant does not have access")
-	}
+
 	if err == nil && exists {
+		log.Println("From cache: ", cached)
+		tenantIdCache, ok := cached["tenantId"].(string)
+		if !ok {
+			fmt.Println("createdBy not found or invalid")
+			return nil, errors.New("Unable to get the CreatedBy field from cache")
+		}
+		if tenantIdCache != tenantId {
+			log.Println("Error from the tenant which is tenant doesnot have access")
+			return nil, errors.New("This tenant does not have access")
+		}
 		return cached, nil
 	}
 
@@ -55,7 +52,17 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 		log.Println("Error from findOne function: ", err)
 		return nil, err
 	}
-	tenantIdFromColl := result["tenantId"].(string)
+	tenantCollVal, ok := result["tenantId"]
+	if !ok {
+		log.Println("Unable to get tenantId from result")
+		return nil, errors.New("Unable to get tenantId from result")
+	}
+	tenantIdFromColl, ok := tenantCollVal.(string)
+	if !ok {
+
+		log.Println("Type assertion tenantId(string) from result")
+		return nil, errors.New("Type assertion tenantId(string) from result")
+	}
 	if tenantIdFromColl != tenantId {
 		log.Println("This tenant does not have access to fetch")
 		return nil, errors.New("This tenant does not have access to fetch")
@@ -124,7 +131,16 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 		log.Println("Error from findOne after updating", err)
 		return err
 	}
-	refreshCache(c, medicalRecordCollection, medicalRecordId, updatedRecord)
+	key := util.MedicalRecordKey + code
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old medicalRecord cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated medicalRecord:", err)
+	}
 	return nil
 }
 func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
@@ -183,7 +199,14 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 		log.Println("Error from findOne after updating", err)
 		return err
 	}
-	refreshCache(c, medicalRecordCollection, medicalRecordId, updatedRecord)
+	key := util.MedicalRecordKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old medicalRecord cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, updatedRecord); err != nil {
+		log.Println("Failed caching updated medicalRecord:", err)
+	}
 	return nil
 }
 

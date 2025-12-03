@@ -4,6 +4,7 @@ import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,7 +13,94 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
+
+/*
+* Check if the collection consists of document with the filter
+* If any document not fund nor db error throw error
+* If not find the document and check with the field if already exists return false
+* Return true only when the document not fund
+ */
+func CheckIfRoleNameExists(c context.Context, roleName string) (bool, error) {
+	collectionStr := "role"
+	collection := db.OpenCollections(collectionStr)
+	filter := bson.M{
+		"roleName": roleName,
+	}
+	result := make(map[string]interface{})
+
+	err := db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments || strings.Contains(err.Error(), "no matching document found") {
+			return true, nil
+		}
+		return false, fmt.Errorf("database error: %v", err)
+	}
+
+	if value, exists := result["roleName"]; exists && value == roleName {
+		log.Printf("Role name '%s' already exists\n", roleName)
+		return false, errors.New(util.ROLE_NAME_ALREADY_EXISTS)
+	}
+	return true, nil
+}
+
+// /*
+// * Check if previleges exists or not
+// * Check if the module data is present or not
+// * Check if the access length is more than 0 or not
+// * Return false for the above conditions
+// * only return true when previleges field is fine
+//  */
+// func CheckIfPrivilegesIsEmpty(c context.Context, previleges []map[string]interface{}) (bool, error) {
+// 	for _, p := range previleges {
+
+// 		val, exists := p["module"]
+// 		if !exists {
+// 			return false, errors.New(util.MODULE_NOT_PROVIDED)
+// 		}
+
+// 		module, ok := val.(string)
+// 		if !ok || strings.TrimSpace(module) == "" {
+// 			return false, errors.New(util.MODULE_NOT_PROVIDED)
+// 		}
+
+// 		val, exists = p["access"]
+// 		if !exists {
+// 			return false, errors.New(util.ACCESS_NOT_PROVIDED)
+// 		}
+
+// 		access, ok := val.([]string)
+// 		if !ok || len(access) == 0 {
+// 			return false, errors.New(util.ACCESS_NOT_PROVIDED)
+// 		}
+// 	}
+// 	return true, nil
+// }
+
+/*
+*  Check if the same module present in the array
+ */
+func CheckDuplicateModules(privileges []map[string]interface{}) error {
+	moduleSet := make(map[string]bool)
+
+	for _, p := range privileges {
+		module, _ := p["module"].(string)
+		moduleClean := strings.TrimSpace(module)
+
+		if moduleClean == "" {
+			continue
+		}
+
+		if moduleSet[moduleClean] {
+			return fmt.Errorf("duplicate module found: %s", moduleClean)
+		}
+
+		moduleSet[moduleClean] = true
+	}
+
+	return nil
+}
 
 /*
 * Take map[string]interface
@@ -20,41 +108,57 @@ import (
 * Do generate the roleCode
 * Convert the []interface{} to the []map[string]interface{}
  */
-func PrepareData(roleData map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+func PrepareRoleData(c *gin.Context, roleData map[string]interface{}) (map[string]interface{}, error) {
+
+	err := getTrimmedString(roleData, "roleName")
+	if err != nil {
+		log.Println("Error from getTrimmedString:", err)
+		return nil, err
+	}
 	if v, ok := roleData["roleName"].(string); ok {
-		result["roleName"] = v
+		roleData["roleName"] = v
+	}
+	roleName := strings.ToUpper(roleData["roleName"].(string))
+	exists, err := CheckIfRoleNameExists(c, roleName)
+	if !exists {
+		log.Println("Error from the CheckIdRoleNameExists")
+		return nil, err
 	}
 	collection := "role"
 	roleCode, err := GenerateEmpCode(collection)
 	if err != nil {
 		log.Println("Error while generating code", err)
 	}
-	result["roleCode"] = roleCode
-	if v, ok := roleData["privileges"].([]interface{}); ok {
-		privs := make([]map[string]interface{}, 0)
+	roleData["roleCode"] = roleCode
+	v, ok := roleData["privileges"].([]interface{})
+	if !ok {
 
-		for _, item := range v {
-			if m, ok := item.(map[string]interface{}); ok {
-				if module, ok := m["module"].(string); ok {
-					m["module"] = module
-				}
-				if accessRaw, exists := m["access"].([]interface{}); exists {
-					accessList := make([]string, 0)
-					for _, a := range accessRaw {
-						if s, ok := a.(string); ok {
-							accessList = append(accessList, s)
-						}
-					}
-					m["access"] = accessList
-				}
-
-				privs = append(privs, m)
-			}
-		}
-		result["privileges"] = privs
+		log.Println("Privileges field not found")
+		return nil, errors.New("Privileges field not found")
 	}
-	return result
+	privs := make([]map[string]interface{}, 0)
+
+	for _, item := range v {
+		if m, ok := item.(map[string]interface{}); ok {
+			if moduleVal, exists := m["module"]; exists {
+				m["module"] = module
+			}
+			if accessRaw, exists := m["access"].([]interface{}); exists {
+				accessList := make([]string, 0)
+				for _, a := range accessRaw {
+					if s, ok := a.(string); ok {
+						accessList = append(accessList, s)
+					}
+				}
+				m["access"] = accessList
+			}
+
+			privs = append(privs, m)
+		}
+	}
+	roleData["privileges"] = privs
+
+	return roleData, nil
 }
 
 /*
@@ -66,25 +170,11 @@ func PrepareData(roleData map[string]interface{}) map[string]interface{} {
  */
 func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interface{}, error) {
 
-	roleData := PrepareData(data)
-	roleNameRaw, ok := roleData["roleName"]
-	if !ok {
-		log.Println("roleName key missing in request")
-		return nil, errors.New(util.ROLE_NAME_KEY_NOT_PROVIDED)
-	}
-
-	roleNameValue, ok := roleNameRaw.(string)
-	if !ok || strings.TrimSpace(roleNameValue) == "" {
-		log.Println("invalid or empty roleName")
-		return nil, errors.New(util.ROLE_NAME_NOT_PROVIDED)
-	}
-	roleName := strings.ToUpper(roleNameValue)
-	exists, err := CheckIfRoleNameExists(c, roleName)
-	if !exists {
-		log.Println("Error from the CheckIdRoleNameExists")
+	roleData, err := PrepareRoleData(c, data)
+	if err != nil {
+		log.Println("Error from prepareRoleData", err)
 		return nil, err
 	}
-
 	privilegesRaw, ok := roleData["privileges"]
 	if !ok {
 		log.Println("privileges key missing in request")
@@ -96,11 +186,11 @@ func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interfa
 		return nil, errors.New(util.PRIVILEGES_DATA_REQUIRED)
 	}
 
-	exists, err = CheckIfPrivilegesIsEmpty(c, privileges)
-	if err != nil {
-		log.Println("Error from checkIfPrivilegesIsEmpty", err)
-		return nil, err
-	}
+	// exists, err := CheckIfPrivilegesIsEmpty(c, privileges)
+	// if err != nil {
+	// 	log.Println("Error from checkIfPrivilegesIsEmpty", err)
+	// 	return nil, err
+	// }
 
 	if err := CheckDuplicateModules(privileges); err != nil {
 		return nil, err
@@ -116,11 +206,7 @@ func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interfa
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert role: %v", err)
 	}
-	key, err := redis.CreateCacheKey("role", roleData["roleCode"].(string))
-	if err != nil {
-		log.Println("error from cache(create key) while creating role")
-		return nil, errors.New("Error from cache create Key")
-	}
+	key := util.RoleKey + data["roleCode"].(string)
 	err = redis.SetCache(c, key, roleData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert role: %v", err)
@@ -205,28 +291,6 @@ func updateRoleInDB(roleCode string, update bson.M) error {
 }
 
 /*
-invalidateRoleCache removes a cached document for the given roleCode.
-*/
-func invalidateRoleCache(c *gin.Context, roleCode string) error {
-	key, err := redis.CreateCacheKey("role", roleCode)
-	if err != nil {
-		return errors.New("error creating cache key")
-	}
-	return redis.DeleteCache(c, key)
-}
-
-/*
-cacheRole stores a role document in Redis using its roleCode.
-*/
-func cacheRole(c *gin.Context, data map[string]interface{}) error {
-	key, err := redis.CreateCacheKey("role", data["roleCode"].(string))
-	if err != nil {
-		return errors.New("error creating cache key")
-	}
-	return redis.SetCache(c, key, data)
-}
-
-/*
 UpdateRole handles updating an existing role:
 - Validates updates
 - Applies update to DB
@@ -260,9 +324,14 @@ func UpdateRole(c *gin.Context, roleCode string, updateData map[string]interface
 	if err != nil {
 		return nil, err
 	}
+	key := util.TestKey + roleCode
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
 
-	_ = invalidateRoleCache(c, roleCode)
-	_ = cacheRole(c, updated)
+	if err := redis.SetCache(c, key, updated); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
 	return updated, nil
 }
@@ -279,8 +348,7 @@ func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, err
 	if strings.TrimSpace(roleCode) == "" {
 		return nil, errors.New("roleCode cannot be empty")
 	}
-
-	key, _ := redis.CreateCacheKey("role", roleCode)
+	key := util.RoleKey + roleCode
 
 	var cached map[string]interface{}
 	found, err := redis.GetCache(c, key, &cached)
@@ -295,8 +363,6 @@ func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, err
 	if err != nil {
 		return nil, errors.New("role not found")
 	}
-
-	_ = cacheRole(c, role)
 
 	return role, nil
 }
@@ -324,8 +390,11 @@ func DeleteRole(c *gin.Context, roleCode string) error {
 	if err != nil {
 		return err
 	}
-
-	_ = invalidateRoleCache(c, roleCode)
+	key := util.RoleKey + roleCode
+	redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error while deleting role: ", err)
+	}
 
 	return nil
 }

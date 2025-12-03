@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -57,9 +58,10 @@ func CreateNurse(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from prepareUser :", err)
 		return val, err
 	}
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return val, err
+	key := util.NurseKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error while caching nurse: ", err)
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -131,7 +133,18 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, code string) error
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, hospitalCollection, code, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return err
+	}
+	key := util.NurseKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old nurse cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated nurse:", err)
+	}
 
 	return nil
 }
@@ -175,11 +188,7 @@ func FetchAllNursesofDoctor(c *gin.Context, Docid string) ([]interface{}, error)
 func FetchNurseByCode(c *gin.Context, code string, tenantId string) (map[string]interface{}, error) {
 
 	coll := nurseCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
+	key := util.NurseKey + code
 
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)

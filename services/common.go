@@ -56,6 +56,8 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
+	case "TEST_REPORT":
+		prefix = "TR"
 	case "PRESCRIPTION":
 		prefix = "PRE"
 	case "PHARMACIST":
@@ -551,12 +553,8 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 	return fmt.Errorf("findOne error: %v", err)
 }
 
-func CacheUserInRedis(c *gin.Context, code string, data map[string]interface{}, collection string) error {
-	key, keyErr := redis.CreateCacheKey(collection, code)
-	if keyErr != nil {
-		log.Println("Unable to create key:", keyErr)
-		return keyErr
-	}
+func CacheUserInRedis(c *gin.Context, code string, key string, data map[string]interface{}, collection string) error {
+
 	err := redis.SetCache(c, key, data)
 	if err != nil {
 		log.Println("Error from SetCache:", err)

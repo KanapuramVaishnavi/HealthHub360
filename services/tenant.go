@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -46,9 +47,12 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from the CacheUserInRedis", err)
-		return err
+
+	key := util.TenantKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error from SetCache:", err)
+		return errors.New("Error from setCache")
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -77,11 +81,7 @@ func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{},
 	filter := bson.M{
 		"code": tenantId,
 	}
-	key, err := redis.CreateCacheKey(coll, tenantId)
-	if err != nil {
-		log.Println("Error from createCacheKey")
-		return nil, err
-	}
+	key := util.TenantKey + tenantId
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
 	if err != nil && exists {
@@ -125,35 +125,41 @@ Workflow:
 6. Refresh cache (delete old → write new)
 7. Return updated tenant document
 */
-func UpdateTenantByCode(c *gin.Context, code string, updateData map[string]interface{}) (map[string]interface{}, error) {
+func UpdateTenantByCode(c *gin.Context, code string, updateData map[string]interface{}) (string, error) {
 
 	if strings.TrimSpace(code) == "" {
-		return nil, errors.New("tenant code required")
+		return "", errors.New("tenant code required")
 	}
 
 	_, err := fetchExistingTenant(code)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	updateFields, err := parseTenantUpdateFields(c, updateData)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	err = updateTenantInDB(code, updateFields)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	updatedTenant, err := fetchExistingTenant(code)
 	if err != nil {
-		return nil, err
+		return "", err
+	}
+	key := util.TenantKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
 	}
 
-	refreshTenantCache(c, code, updatedTenant)
+	if err := redis.SetCache(c, key, updatedTenant); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
-	return updatedTenant, nil
+	return "Updated successfully", nil
 }
 
 /*
@@ -229,56 +235,31 @@ func updateTenantInDB(code string, update bson.M) error {
 }
 
 /*
-refreshTenantCache removes any old cache entry and stores the updated tenant data in Redis.
-Cache failures are logged but not returned as errors (non-blocking).
-*/
-func refreshTenantCache(c *gin.Context, code string, data map[string]interface{}) {
-
-	key, err := redis.CreateCacheKey(tenantCollection, code)
-	if err != nil {
-		log.Println("Failed creating tenant cache key:", err)
-		return
-	}
-
-	// Delete old cache entry
-	if err := redis.DeleteCache(c, key); err != nil {
-		log.Println("Failed deleting old tenant cache:", err)
-	}
-
-	// Set new cache entry
-	if err := redis.SetCache(c, key, data); err != nil {
-		log.Println("Failed caching updated tenant:", err)
-	}
-}
-
-/*
 It deletes the document which matches the code given in the
 tenant where it used delete one function
 */
 func DeleteTenantByCode(c *gin.Context, code string) error {
-	key, err := redis.CreateCacheKey("tenant", code)
-	if err != nil {
-		log.Println("error from cache(create key) while creating role")
-		return errors.New("Error from cache create Key")
-	}
+
 	if code == "" {
 		return errors.New("tenant code required")
 	}
 	collection := db.OpenCollections(tenantCollection)
 	filter := bson.M{"code": code}
 	var res interface{}
-	err = db.FindOne(c, collection, filter, res)
+	err := db.FindOne(c, collection, filter, res)
 	if err != nil {
 		return err
 	}
-	delres, err := db.DeleteOne(c, collection, filter)
+	delete, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
 		return err
 	}
+	key := util.TenantKey + code
+	log.Println("Tenant cache key: ", key)
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		return err
 	}
-	log.Println(delres.DeletedCount)
+	log.Println(delete.DeletedCount)
 	return nil
 }

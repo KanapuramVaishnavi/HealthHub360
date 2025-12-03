@@ -3,13 +3,9 @@ package redis
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -53,21 +49,6 @@ func ConnectRedis() {
 	log.Println("Connected to Redis successfully!")
 }
 
-func CreateCacheKey(collectionName, code string) (string, error) {
-	if strings.TrimSpace(collectionName) == "" {
-		return "", errors.New("collection name is required")
-	}
-	if strings.TrimSpace(code) == "" {
-		return "", errors.New("code is required")
-	}
-
-	// Convert collection name to UPPERCASE
-	upperName := strings.ToUpper(collectionName)
-
-	key := fmt.Sprintf("%s#%s", upperName, code)
-	return key, nil
-}
-
 /*
 * Give key,value and duration to set in cache
 * Try to marshal into key and value types
@@ -79,13 +60,8 @@ func SetCache(c context.Context, key string, value interface{}) error {
 		log.Println("Failed to marshal data for cache:", err)
 		return err
 	}
-	expirationStr := os.Getenv("EXPIRATION_TIME")
-	expirationMins, err := strconv.Atoi(expirationStr)
-	if err != nil {
-		log.Println("Failed to convert the string to integer", err)
-	}
-	expiration := time.Duration(expirationMins) * time.Minute
-	err = Rdb.Set(c, key, dataBytes, expiration).Err()
+
+	err = Rdb.Set(c, key, dataBytes, 0).Err()
 	if err != nil {
 		log.Println("Failed to set cache:", err)
 		return err

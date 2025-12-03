@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"log"
 
@@ -62,7 +63,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		return "", err
 	}
 	data["tenantId"] = pharmacist["tenantId"].(string)
-	data["hopitalId"] = pharmacist["createdBy"].(string)
+	data["hospitalId"] = pharmacist["createdBy"].(string)
 	log.Println("MEDICINE CODE:", code)
 	coll := medicineCollection
 	collection := db.OpenCollections(coll)
@@ -72,11 +73,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		return "", err
 	}
 	log.Println("Inserted: ", inserted.InsertedID)
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error from createCacheKey: ", err)
-		return "", err
-	}
+	key := util.MedicinesKey + code
 	err = redis.SetCache(c, key, data)
 	if err != nil {
 		log.Println("Error from setCache: ", err)
@@ -108,9 +105,7 @@ func fetchMedicineFromDB(c *gin.Context, medicineId string, key string,
 }
 func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
 
-	coll := medicineCollection
-	key, _ := redis.CreateCacheKey(coll, medicineId)
-
+	key := util.MedicinesKey + medicineId
 	tenantId := c.GetString("tenantId")
 	code := c.GetString("code")
 	collFromContext := c.GetString("collection")
@@ -209,7 +204,15 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 		log.Println("Error from findOne:", err)
 		return "", err
 	}
-	refreshCache(c, coll, medicineId, updatedMedicine)
+	key := util.MedicinesKey + medicineId
+	err = db.FindOne(c, collection, filter, result)
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old medicine cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated medicine:", err)
+	}
 	return "Updated successfully", nil
 }
 

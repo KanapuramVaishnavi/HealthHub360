@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -65,9 +66,10 @@ func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
 	log.Println("tenantId from context: ", tenantId)
 
 	data["tenantId"] = tenantId
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return val, err
+	key := util.TestKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error while caching new test: ", err)
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -125,7 +127,15 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, hospitalCollection, code, result)
+	key := util.TestKey + code
+	err = db.FindOne(c, collection, filter, result)
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
 	return nil
 }
@@ -139,11 +149,7 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
  */
 func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, error) {
 	coll := testCollection
-	key, err := redis.CreateCacheKey(coll, testId)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
+	key := util.TestKey + testId
 	sa, err := IsSuperAdmin(c)
 	if err != nil {
 		return nil, err
@@ -220,12 +226,7 @@ func FetchAllTests(c *gin.Context, tenantId string) ([]interface{}, error) {
 * If not return no another hospital admin can have access to delete it
  */
 func DeleteTest(c *gin.Context, code string) (string, error) {
-	coll := testCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return "", err
-	}
+	key := util.TestKey + code
 	collection := db.OpenCollections(testCollection)
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
@@ -241,7 +242,7 @@ func DeleteTest(c *gin.Context, code string) (string, error) {
 		"code": code,
 	}
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, result)
+	err := db.FindOne(c, collection, filter, result)
 	if err != nil {
 		log.Println("Error from the findOne function: ", err)
 		return "", err

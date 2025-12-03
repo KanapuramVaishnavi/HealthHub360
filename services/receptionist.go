@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -51,9 +52,10 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
-	if err := CacheUserInRedis(ctx, code, body, collection); err != nil {
-		log.Println("Error from the CacheUserInRedis", err)
-		return err
+	key := util.ReceptionistKey + code
+	err = redis.SetCache(ctx, key, body)
+	if err != nil {
+		log.Println("Unable to set receptionist in cache: ", err)
 	}
 	if _, err := SaveUserToDB(collection, body); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -86,17 +88,14 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{}, error) {
 
 	coll := receptionistCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from the getTenantIdFromToken:", err)
 		return nil, err
 	}
 	cached := make(map[string]interface{})
+	key := util.ReceptionistKey + code
+
 	exists, err := redis.GetCache(c, key, &cached)
 
 	if err == nil && exists {
@@ -196,8 +195,15 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, code string
 	log.Println(res.UpsertedCount)
 
 	result := make(map[string]interface{})
+	key := util.ReceptionistKey + code
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, receptionistCollection, code, result)
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, data); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
 	return nil
 }
