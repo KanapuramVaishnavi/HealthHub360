@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -54,9 +55,11 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return err
+	key := util.HospitalKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error from SetCache:", err)
+		return errors.New("Error from setCache")
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -179,7 +182,19 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, hospitalCollection, code, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return err
+	}
+	key := util.HospitalKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old tenant cache:", err)
+	}
+
+	// Set new cache entry
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated tenant:", err)
+	}
 
 	return nil
 }
@@ -190,13 +205,9 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
  */
 func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, error) {
 	coll := hospitalCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
-	log.Println(key)
 
+	key := util.HospitalKey + code
+	log.Println("Cache key: ", key)
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
@@ -288,12 +299,7 @@ func DeleteHospitalByCode(c *gin.Context, code string) (string, error) {
 		log.Println("Error from the deleteOne function: ", err)
 		return "", err
 	}
-	coll := hospitalCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return "", err
-	}
+	key := util.HospitalKey + code
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		log.Println("Error from deleteCache:", err)

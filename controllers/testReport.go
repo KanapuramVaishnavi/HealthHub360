@@ -11,7 +11,7 @@ import (
 
 func TestReport(router *gin.Engine) {
 	test := router.Group("/testReport", authorization.JWTAuth())
-	test.POST("/create/:patientId", CreateTestReport)
+	test.POST("/create/:patientId", authorization.Authorize("testReport", "create"), CreateTestReport)
 }
 
 /*

@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -63,9 +64,10 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		return val, err
 	}
 	data["age"] = age
-	if err := CacheUserInRedis(c, code, data, collection); err != nil {
-		log.Println("Error from CacheUserInRedis: ", err)
-		return val, err
+	key := util.PatientKey + code
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Failed caching new patient: ", err)
 	}
 	if _, err := SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -88,12 +90,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 }
 
 func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{}, error) {
-	coll := patientCollection
-	key, err := redis.CreateCacheKey(coll, patientId)
-	if err != nil {
-		log.Println("Error from CreateCacheKey: ", err)
-		return nil, err
-	}
+	key := util.PatientKey + patientId
 
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
@@ -104,17 +101,18 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
-	log.Println("From cache: ", cached)
-	tenantIdCache, ok := cached["tenantId"].(string)
-	if !ok {
-		fmt.Println("createdBy not found or invalid")
-		return nil, errors.New("Unable to get the CreatedBy field from cache")
-	}
-	if tenantIdCache != tenantId {
-		log.Println("Error from the tenant which is tenant doesnot have access")
-		return nil, errors.New("This tenant does not have access")
-	}
+
 	if err == nil && exists {
+		log.Println("From cache: ", cached)
+		tenantIdCache, ok := cached["tenantId"].(string)
+		if exists && !ok {
+			fmt.Println("createdBy not found or invalid")
+			return nil, errors.New("Unable to get the CreatedBy field from cache")
+		}
+		if tenantIdCache != tenantId {
+			log.Println("Error from the tenant which is tenant doesnot have access")
+			return nil, errors.New("This tenant does not have access")
+		}
 		return cached, nil
 	}
 
@@ -174,10 +172,6 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 		}
 	}
 	coll := patientCollection
-	key, err := redis.CreateCacheKey(coll, patientId)
-	if err != nil {
-		log.Println("Error from CreateCacheKey: ", key)
-	}
 	collection := db.OpenCollections(coll)
 
 	filter := bson.M{
@@ -214,7 +208,19 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 		log.Println("Error from findOne: ", err)
 		return val, err
 	}
-	refreshCache(c, coll, patientId, result)
+	key := util.PatientKey + patientId
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return val, err
+	}
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old patient cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, result); err != nil {
+		log.Println("Failed caching updated patient:", err)
+	}
 	return "Updated Successfully", nil
 }
 
@@ -266,10 +272,7 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 		log.Println("This user doesnot have access")
 		return "", errors.New("This user doesnot have access")
 	}
-	key, err := redis.CreateCacheKey(coll, patientId)
-	if err != nil {
-		log.Println("Error from createCacheKey", err)
-	}
+	key := util.PatientKey + patientId
 	redis.DeleteCache(c, key)
 	return "Deleted successfully", nil
 }

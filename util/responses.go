@@ -25,6 +25,11 @@ func SuccessResponse(user any) gin.H {
 			"data":   v,
 			"status": STATUS_SUCCESS,
 		}
+	case []string:
+		return gin.H{
+			"data":   v,
+			"status": STATUS_SUCCESS,
+		}
 	}
 	return gin.H{
 		"data":   "invalid data",

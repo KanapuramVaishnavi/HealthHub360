@@ -3,88 +3,17 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
-// func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, error) {
-// 	medicines, ok := data["medicines"].([]map[string]interface{})
-// 	if !ok {
-// 		log.Println("medicines field doesnot exists in response")
-// 		return "", errors.New("Medicines field doesnot exists in response")
-// 	}
-// 	for _, medicine := range medicines {
-// 		fields := []string{"medicineId", "instructions"}
-// 		for _, field := range fields {
-// 			err := getTrimmedString(data, field)
-// 			if err != nil {
-// 				log.Println("Error from getTrimmedString: ", err)
-// 				return "", err
-// 			}
-// 		}
-// 		intFields := []string{"dosagePerFrequency", "noOfDays"}
-// 		for _, field := range intFields {
-// 			number, ok := data[field].(float64)
-// 			if !ok {
-// 				log.Printf("Field %s not in integer format", field)
-// 				return "", errors.New("Field not in integer format")
-// 			}
-// 			data[field] = int(number)
-// 		}
-// 		frequency, ok := medicine["frequency"].([]map[string]interface{})
-// 		if !ok {
-// 			log.Println("frequency field is not in the medicine")
-// 			return "", errors.New("Frequency field not in medicine")
-// 		}
-// 		freFields := []string{"morning", "afternoon", "night"}
-// 		for _, f := range frequency {
-// 			for _, fre := range freFields {
-// 				freType, ok := f[fre].(bool)
-// 				if !ok {
-// 					log.Printf("Field %s is not in frequency", fre)
-// 					return "", errors.New("Field not in frequency")
-// 				}
-// 				f[fre] = freType
-// 			}
+func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalRecordId string) (string, error) {
 
-// 		}
-// 		data["frequency"] = frequency
-// 		doctorId, err := GetFromContext[string](c, "code")
-// 		if err != nil {
-// 			log.Println("Error from getFromContext", err)
-// 			return "", err
-// 		}
-
-// 		coll := prescriptionCollection
-// 		code, err := GenerateEmpCode(coll)
-// 		if err != nil {
-// 			log.Println("Error from generateEmpCode: ", err)
-// 			return "", err
-// 		}
-// 		data["code"] = code
-// 		data["createdBy"] = doctorId
-// 		data["updatedBy"] = doctorId
-// 		data["createdAt"] = time.Now()
-// 		data["updatedAt"] = time.Now()
-// 		collection := db.OpenCollections(coll)
-// 		inserted, err := db.CreateOne(c, collection, data)
-// 		if err != nil {
-// 			log.Println("Error from createOne: ", err)
-// 			return "", err
-// 		}
-// 		log.Println("Inserted prescription: ", inserted.InsertedID)
-// 		key, err := redis.CreateCacheKey(coll, code)
-// 		if err != nil {
-// 			log.Println("Error from createCacheKey: ", err)
-// 			return "", err
-// 		}
-// 	}
-// }
-func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, error) {
-	// Extract medicines list
 	rawMedicines, ok := data["medicines"].([]interface{})
 	if !ok {
 		log.Println("Medicines field must be list of interface")
@@ -97,7 +26,6 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, er
 			return "", errors.New("invalid medicine format")
 		}
 
-		// Trim string fields
 		fields := []string{"medicineId", "instructions"}
 		for _, field := range fields {
 			err := getTrimmedString(medicine, field)
@@ -106,7 +34,6 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, er
 			}
 		}
 
-		// Integer fields
 		intFields := []string{"dosagePerFrequency", "noOfDays"}
 		for _, field := range intFields {
 			floatValue, ok := medicine[field].(float64)
@@ -116,7 +43,6 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, er
 			medicine[field] = int(floatValue)
 		}
 
-		// Frequency validation
 		frequency, ok := medicine["frequency"].(map[string]interface{})
 		if !ok {
 			return "", errors.New("frequency must be an object")
@@ -132,38 +58,185 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}) (string, er
 		}
 	}
 
-	// Get doctorId from context
 	doctorId, err := GetFromContext[string](c, "code")
 	if err != nil {
+		log.Println("Error from getFromContext(doctorId): ", err)
+		return "", err
+	}
+	tenantId, err := GetFromContext[string](c, "tenantId")
+	if err != nil {
+		log.Println("Error from getFromContext(tenantId): ", err)
 		return "", err
 	}
 
-	// Generate prescription code
 	coll := prescriptionCollection
 	prescriptionCode, err := GenerateEmpCode(coll)
 	if err != nil {
 		return "", err
 	}
-
-	// Set metadata
+	medRecDoc := make(map[string]interface{})
+	medRecDoc["prescriptionId"] = prescriptionCode
+	_, err = UpdateMedicalRecord(c, medicalRecordId, medRecDoc)
+	if err != nil {
+		log.Println("Error from updateMedicalRecord: ", err)
+		return "", err
+	}
 	data["code"] = prescriptionCode
+	data["tenantId"] = tenantId
 	data["createdBy"] = doctorId
 	data["updatedBy"] = doctorId
 	data["createdAt"] = time.Now()
 	data["updatedAt"] = time.Now()
 
-	// Insert into DB
 	collection := db.OpenCollections(coll)
 	_, err = db.CreateOne(c, collection, data)
 	if err != nil {
 		return "", err
 	}
 
-	// Cache
-	key, err := redis.CreateCacheKey(coll, prescriptionCode)
-	if err == nil {
-		redis.SetCache(c, key, data)
+	key := util.PrescriptionKey + prescriptionCode
+	err = redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Error while caching new prescription: ", err)
 	}
-
-	return prescriptionCode, nil
+	return "Created successfully", nil
 }
+
+func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]interface{}, error) {
+	doctorId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return nil, err
+	}
+	coll := prescriptionId
+	collection := db.OpenCollections(coll)
+	key := util.PrescriptionKey + prescriptionId
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err == nil && exists {
+		return cached, nil
+	}
+	log.Println("Error from getCache: ", err)
+	filter := bson.M{
+		"code": prescriptionId,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
+	}
+	preDocIdVal, ok := result["doctorId"]
+	if !ok {
+		log.Println("doctorId field not present in prescription")
+		return nil, errors.New("doctorId field not present in prescription")
+	}
+	preDocId, ok := preDocIdVal.(string)
+	if !ok {
+		log.Println("doctorId field in prescription not in string type")
+		return nil, errors.New("doctorId field in prescription not in string type")
+	}
+	if doctorId != preDocId {
+		log.Println("Doctor doesnot have access")
+		return nil, errors.New("Doctor doesnot have access")
+	}
+	return result, nil
+}
+
+func FetchAllPresciptions(c *gin.Context) ([]interface{}, error) {
+	coll := prescriptionCollection
+	collection := db.OpenCollections(coll)
+	doctorId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return nil, err
+	}
+	filter := bson.M{
+		"updatedBy": doctorId,
+	}
+	prescriptions, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from findAll: ", err)
+		return nil, err
+	}
+	return prescriptions, nil
+}
+
+// func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string) (map[string]interface{}, error) {
+
+// 	intFields := []string{"dosagePerFrequency", "noOfDays"}
+// 	for _, field := range intFields {
+// 		number, ok := data[field].(float64)
+// 		if !ok {
+// 			log.Println("Field not in integer format ")
+// 			return nil, errors.New("Field not in integer format: " + field)
+// 		}
+// 		data[field] = int(number)
+// 	}
+// 	err := trimIfExists(data, "instructions")
+// 	if err != nil {
+// 		log.Println("Error from trimIfExists")
+// 		return nil, err
+// 	}
+// 	if freq, exists := data["frequency"]; exists {
+// 		f, okay := freq.(map[string]interface{})
+// 		if !okay {
+// 			log.Println("frequency field must be object")
+// 			return nil, errors.New("frequency field must be object")
+// 		}
+// 		fields := []string{"morning", "afternoon", "night"}
+// 		for _, field := range fields {
+// 			if val, ok := f[field]; ok {
+// 				boolean, ok := val.(bool)
+// 				if !ok {
+// 					log.Printf("Frequency %s must be true/false", field)
+// 					return nil, fmt.Errorf("Frequency %s must be true/false", field)
+// 				}
+// 				f[field] = boolean
+// 			}
+// 		}
+// 		data["frequency"] = f
+// 	}
+// 	data["updatedBy"] = doctorId
+// 	return data, nil
+// }
+// func UpdatePrescription(c *gin.Context, prescriptionId string, medicineRecordId string, data map[string]interface{}) (string, error) {
+// 	doctorId, err := GetFromContext[string](c, "code")
+// 	if err != nil {
+// 		log.Println("Error from getFromContext: ", err)
+// 		return "", err
+// 	}
+// 	data, err = ValidateUpdatePrescriptionData(data, doctorId)
+// 	coll := prescriptionCollection
+// 	collection := db.OpenCollections(coll)
+// 	filter := bson.M{
+// 		"code": prescriptionId,
+// 		"medicines":
+// 	}
+// 	result := make(map[string]interface{})
+// 	err = db.FindOne(c, collection, filter, result)
+// 	if err != nil {
+// 		log.Println("Error from findOne: ", err)
+// 		return "", err
+// 	}
+// 	docFromPrescriptionVal, ok := result["createdBy"]
+// 	if !ok {
+// 		log.Println("createdBy(doctor) field doesnot exists in prescription")
+// 		return "", errors.New("createdBy(doctor) field doesnot exists in prescription")
+// 	}
+// 	if doctorId != docFromPrescriptionVal.(string) {
+// 		log.Println("This doctor doesnot have access")
+// 		return "", errors.New("This doctor doesnot have access")
+// 	}
+// 	update := bson.M{
+// 		"$set": data,
+// 	}
+// 	updated, err := db.UpdateOne(c, collection, filter, update)
+// 	if err != nil {
+// 		log.Println("Error from updateOne: ", err)
+// 		return "", err
+// 	}
+// 	log.Println("Updated prescription count: ", updated.ModifiedCount)
+// 	refreshCache(c, coll, prescriptionId, data)
+// 	return "updated successfully", nil
+// }

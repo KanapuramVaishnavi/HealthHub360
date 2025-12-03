@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
@@ -51,9 +52,10 @@ func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
-	if err := CacheUserInRedis(ctx, code, body, collection); err != nil {
-		log.Println("Error from the CacheUserInRedis", err)
-		return err
+	key := util.PharamacistKey + code
+	err = redis.SetCache(ctx, key, body)
+	if err != nil {
+		log.Println("Error while caching new pharmacist: ", err)
 	}
 	if _, err := SaveUserToDB(collection, body); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -89,11 +91,7 @@ func FetchPharmacistByCode(c *gin.Context, code string) (map[string]interface{},
 		return nil, err
 	}
 	coll := pharmacistCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return nil, err
-	}
+	key := util.PharamacistKey + code
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from the getTenantIdFromToken:", err)
@@ -205,7 +203,14 @@ func UpdatePharmacist(c *gin.Context, data map[string]interface{}, code string) 
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
-	refreshCache(c, receptionistCollection, code, result)
+	key := util.PharamacistKey + code
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old pharmacist cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, data); err != nil {
+		log.Println("Failed caching updated pharmacist:", err)
+	}
 
 	return nil
 }
@@ -214,12 +219,7 @@ func UpdatePharmacist(c *gin.Context, data map[string]interface{}, code string) 
 Delete the Pharmacist from the pharmacist Collection
 */
 func DeletePharmacist(c *gin.Context, code string) (string, error) {
-	coll := pharmacistCollection
-	key, err := redis.CreateCacheKey(coll, code)
-	if err != nil {
-		log.Println("Error creating cache key:", err)
-		return "", err
-	}
+	key := util.PharamacistKey + code
 	collection := db.OpenCollections(pharmacistCollection)
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
@@ -234,7 +234,7 @@ func DeletePharmacist(c *gin.Context, code string) (string, error) {
 		"code": code,
 	}
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, result)
+	err := db.FindOne(c, collection, filter, result)
 	if err != nil {
 		log.Println("Error from the findOne function: ", err)
 		return "", err
