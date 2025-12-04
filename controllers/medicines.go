@@ -10,12 +10,14 @@ import (
 )
 
 func Medicines(router *gin.Engine) {
-	medicines := router.Group("/medicines", authorization.JWTAuth())
-	medicines.POST("/create", authorization.Authorize("medicines", "create"), CreateMedicines)
-	medicines.GET("/fetch/:medicineCode", authorization.Authorize("medicines", "view"), FetchMedicineByCode)
-	medicines.GET("/fetchAll", authorization.Authorize("medicines", "view"), FetchAllMedicines)
-	medicines.PATCH("/update/:medicineCode", authorization.Authorize("medicines", "update"), UpdateMedicines)
-	medicines.DELETE("/delete/:medicineCode", authorization.Authorize("medicines", "delete"), DeleteMedicine)
+	medicines := router.Group("/medicines")
+	{
+		medicines.POST("/create", authorization.Authorize("medicines", "create"), CreateMedicines)
+		medicines.GET("/fetch/:medicineCode", authorization.Authorize("medicines", "view"), FetchMedicineByCode)
+		medicines.GET("/fetchAll", authorization.Authorize("medicines", "view"), FetchAllMedicines)
+		medicines.PATCH("/update/:medicineCode", authorization.Authorize("medicines", "update"), UpdateMedicines)
+		medicines.DELETE("/delete/:medicineCode", authorization.Authorize("medicines", "delete"), DeleteMedicine)
+	}
 }
 func CreateMedicines(c *gin.Context) {
 	var data map[string]interface{}

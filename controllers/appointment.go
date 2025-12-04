@@ -10,12 +10,14 @@ import (
 )
 
 func Appointment(c *gin.Engine) {
-	appointment := c.Group("appointment", authorization.JWTAuth())
-	appointment.POST("/create/:doctorId/:nurseId", authorization.Authorize("appointment", "create"), CreateAppointment)
-	appointment.PATCH("/update/:appointmentId", authorization.Authorize("appointment", "update"), UpdateAppointment)
-	appointment.GET("/fetch/:appointmentId", authorization.Authorize("appointment", "view"), FetchAppointmentByCode)
-	appointment.GET("/fetchAll", authorization.Authorize("appointment", "view"), FetchAllAppointments)
-	appointment.DELETE("/delete/:appointmentId", authorization.Authorize("appointment", "delete"), DeleteAppointmentByCode)
+	appointment := c.Group("appointment")
+	{
+		appointment.POST("/create/:doctorId/:nurseId", authorization.Authorize("appointment", "create"), CreateAppointment)
+		appointment.PATCH("/update/:appointmentId", authorization.Authorize("appointment", "update"), UpdateAppointment)
+		appointment.GET("/fetch/:appointmentId", authorization.Authorize("appointment", "view"), FetchAppointmentByCode)
+		appointment.GET("/fetchAll", authorization.Authorize("appointment", "view"), FetchAllAppointments)
+		appointment.DELETE("/delete/:appointmentId", authorization.Authorize("appointment", "delete"), DeleteAppointmentByCode)
+	}
 }
 
 /*

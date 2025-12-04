@@ -4,6 +4,7 @@ import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/jwt"
 	"HealthHub360/models"
+	"HealthHub360/services"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -154,7 +155,7 @@ func getRoleCode(c *gin.Context) (string, error) {
 	}
 
 	roleCode, ok := roleCodeValue.(string)
-	if !ok || roleCode == "" {
+	if !ok {
 		log.Println("Type assertion error for roleCode")
 		return "", errors.New(util.ROLE_CODE_VALUE_NOT_FOUND)
 	}
@@ -167,14 +168,15 @@ func getRoleCode(c *gin.Context) (string, error) {
 * Find for the document and pass to extract privileges
  */
 func getRoleDocument(ctx context.Context, roleCode string) (map[string]interface{}, error) {
-	roleCollection := db.OpenCollections("role")
+	coll := services.RoleCollection
+	roleColl := db.OpenCollections(coll)
 
 	filter := bson.M{
 		"roleCode": roleCode,
 	}
 
 	roleDoc := make(map[string]interface{})
-	err := db.FindOne(ctx, roleCollection, filter, &roleDoc)
+	err := db.FindOne(ctx, roleColl, filter, &roleDoc)
 	if err != nil {
 		log.Println("Error fetching role document:", err)
 		return nil, err
@@ -228,7 +230,7 @@ func hasAccess(privileges []map[string]interface{}, moduleName string, access st
 
 		dbModule, _ := priv["module"].(string)
 
-		if strings.EqualFold(dbModule, moduleName) {
+		if dbModule == moduleName {
 
 			var accessList []string
 
@@ -248,7 +250,7 @@ func hasAccess(privileges []map[string]interface{}, moduleName string, access st
 			}
 
 			for _, aStr := range accessList {
-				if strings.EqualFold(aStr, access) {
+				if aStr == access {
 					return true, dbModule, accessList, nil
 				}
 
@@ -273,7 +275,7 @@ func Authorize(moduleName string, access string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleCode, err := getRoleCode(c)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			c.JSON(400, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
@@ -281,7 +283,7 @@ func Authorize(moduleName string, access string) gin.HandlerFunc {
 		ctx := c.Request.Context()
 		roleDoc, err := getRoleDocument(ctx, roleCode)
 		if err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			c.JSON(400, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
@@ -289,14 +291,14 @@ func Authorize(moduleName string, access string) gin.HandlerFunc {
 		// Extract privileges using the helper
 		privileges, err := extractPrivileges(roleDoc)
 		if err != nil {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			c.JSON(400, gin.H{"error": err.Error()})
 			c.Abort()
 			return
 		}
 
 		ok, foundModule, accessList, err := hasAccess(privileges, moduleName, access)
 		if !ok {
-			c.JSON(http.StatusForbidden, gin.H{
+			c.JSON(400, gin.H{
 				"error":       err.Error(),
 				"module":      foundModule,
 				"access_list": accessList,

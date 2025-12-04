@@ -488,7 +488,7 @@ func canAccess(collFromContext string, userData, record map[string]interface{},
 		return nil
 	}
 
-	if collFromContext == tenantCollection {
+	if collFromContext == TenantCollection {
 		if record["tenantId"].(string) != tenantId {
 			return errors.New("tenant does not have access")
 		}

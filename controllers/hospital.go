@@ -9,7 +9,7 @@ import (
 )
 
 func Hospital(router *gin.Engine) {
-	hospital := router.Group("/hospital", authorization.JWTAuth())
+	hospital := router.Group("/hospital")
 	{
 		hospital.POST("/create", authorization.Authorize("hospital", "create"), HospitalCreate)
 		hospital.PUT("/update/:code", authorization.Authorize("hospital", "update"), UpdateHospital)

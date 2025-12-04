@@ -11,7 +11,7 @@ import (
 )
 
 func Tenant(router *gin.Engine) {
-	tenant := router.Group("/tenant", authorization.JWTAuth())
+	tenant := router.Group("/tenant")
 	{
 		tenant.POST("/create", authorization.Authorize("tenant", "create"), CreateTenant)
 		tenant.GET("/fetch/:code", authorization.Authorize("tenant", "view"), FetchTenantByCode)

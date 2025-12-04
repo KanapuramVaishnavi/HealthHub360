@@ -88,6 +88,7 @@ func GetCache(c context.Context, key string, dest *map[string]interface{}) (bool
 		log.Println("Failed to unmarshal to destination variable")
 		return false, err
 	}
+
 	return true, nil
 }
 

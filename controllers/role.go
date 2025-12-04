@@ -3,6 +3,7 @@ package controllers
 import (
 	"HealthHub360/config/authorization"
 	"HealthHub360/services"
+	"HealthHub360/util"
 	"log"
 	"net/http"
 
@@ -10,10 +11,9 @@ import (
 )
 
 func Role(router *gin.Engine) {
-
-	router.POST("/role/create", CreateRole)
-	role := router.Group("/role", authorization.JWTAuth())
+	role := router.Group("/role")
 	{
+		role.POST("create", authorization.Authorize("role", "create"), CreateRole)
 		role.POST("/fetchAll", authorization.Authorize("role", "view"), ReadRoles)
 		role.POST("/update/:roleCode", authorization.Authorize("role", "update"), UpdateRole)
 		role.GET("/fetch/:roleCode", authorization.Authorize("role", "view"), FetchRoleById)
@@ -31,20 +31,17 @@ func CreateRole(c *gin.Context) {
 	var roleData map[string]interface{}
 
 	if err := c.BindJSON(&roleData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
 	insertedRole, err := services.CreateRole(c, roleData)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Role created successfully",
-		"data":    insertedRole,
-	})
+	c.JSON(http.StatusOK, util.SuccessResponse(insertedRole))
 }
 
 /*
@@ -53,12 +50,10 @@ Here It reads all the roles of the user
 func ReadRoles(c *gin.Context) {
 	data, err := services.ReadRoles(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"Roles": data,
-	})
+	c.JSON(http.StatusOK, util.SuccessResponse(data))
 }
 
 /*
@@ -69,17 +64,17 @@ func UpdateRole(c *gin.Context) {
 
 	var body map[string]interface{}
 	if err := c.BindJSON(&body); err != nil {
-		c.JSON(400, gin.H{"error": "invalid body"})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
 
 	updated, err := services.UpdateRole(c, roleCode, body)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
 
-	c.JSON(200, updated)
+	c.JSON(200, util.SuccessResponse(updated))
 }
 
 /*
@@ -90,10 +85,10 @@ func FetchRoleById(c *gin.Context) {
 	var body map[string]interface{}
 	body, err := services.FetchRoleById(c, roleCode)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	c.JSON(200, gin.H{"Data": body})
+	c.JSON(200, util.SuccessResponse(body))
 }
 
 /*
@@ -105,8 +100,8 @@ func DeleteRole(c *gin.Context) {
 	roleCode := c.Param("roleCode")
 	err := services.DeleteRole(c, roleCode)
 	if err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	c.JSON(200, gin.H{"message": "success"})
+	c.JSON(200, util.SuccessResponse("Deleted successfully"))
 }

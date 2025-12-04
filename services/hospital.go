@@ -208,6 +208,11 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 
 	key := util.HospitalKey + code
 	log.Println("Cache key: ", key)
+	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return nil, err
+	}
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
@@ -220,42 +225,41 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 	tenantIdCache, ok := cached["tenantId"].(string)
 	if !ok {
 		fmt.Println("createdBy not found or invalid")
-		return nil, errors.New("Unable to get the CreatedBy field from cache")
 	}
-
-	if tenantIdCache != tenantId {
-		log.Println("Error from the tenant which is tenant doesnot have access")
-		return nil, errors.New("This tenant does not have access")
+	if !isSuperAdmin {
+		if tenantIdCache != tenantId {
+			log.Println("Error from the tenant which is tenant doesnot have access")
+		}
 	}
 	if err == nil && exists {
 		log.Println("From cache")
 		return cached, nil
 	}
-
 	result := make(map[string]interface{})
+	filter := bson.M{
+		"code": code,
+	}
+	collection := db.OpenCollections(coll)
+	log.Println("Filter: ", filter)
+	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		filter := bson.M{
-			"code": code,
-		}
-		collection := db.OpenCollections(coll)
-
-		err = db.FindOne(c, collection, filter, result)
-		if err != nil {
-			log.Println("Error from the FindOne function,err")
-			return nil, err
-		}
+		log.Println("Error from the FindOne function,err")
+		return nil, err
+	}
+	if !isSuperAdmin {
 		tenantIdFromColl := result["tenantId"].(string)
 		if tenantIdFromColl != tenantId {
 			log.Println("This tenant does not have access to fetch")
 			return nil, errors.New("This tenant does not have access to fetch")
 		}
-
-		err = redis.SetCache(c, key, result)
-		if err != nil {
-			log.Println("Error from the setCache:", err)
-			return nil, err
-		}
 	}
+
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from the setCache:", err)
+		return nil, err
+	}
+
 	return result, nil
 }
 

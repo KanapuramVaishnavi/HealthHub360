@@ -9,7 +9,7 @@ import (
 )
 
 func Nurse(router *gin.Engine) {
-	nurse := router.Group("/nurse", authorization.JWTAuth())
+	nurse := router.Group("/nurse")
 	{
 		nurse.POST("/create", authorization.Authorize("nurse", "create"), CreateNurse)
 		nurse.PUT("/update/:code", authorization.Authorize("nurse", "update"), UpdateNurse)

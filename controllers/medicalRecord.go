@@ -9,9 +9,11 @@ import (
 )
 
 func MedicalRecord(c *gin.Engine) {
-	medicalRecord := c.Group("medicalRecord", authorization.JWTAuth())
-	medicalRecord.GET("/get/:medicalRecordId", authorization.Authorize("medicalRecord", "view"), FetchMedicalRecordByCode)
-	medicalRecord.PATCH("/update/:medicalRecordId", authorization.Authorize("medicalRecord", "update"), UpdateMedicalRecord)
+	medicalRecord := c.Group("medicalRecord")
+	{
+		medicalRecord.GET("/get/:medicalRecordId", authorization.Authorize("medicalRecord", "view"), FetchMedicalRecordByCode)
+		medicalRecord.PATCH("/update/:medicalRecordId", authorization.Authorize("medicalRecord", "update"), UpdateMedicalRecord)
+	}
 }
 
 func FetchMedicalRecordByCode(c *gin.Context) {

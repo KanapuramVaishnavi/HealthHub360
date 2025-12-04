@@ -10,8 +10,7 @@ import (
 )
 
 func SuperAdmin(router *gin.Engine) {
-	router.POST("/superAdmin/create", CreateSuperAdmin)
-	superAdmin := router.Group("/superAdmin", authorization.JWTAuth())
+	superAdmin := router.Group("/superAdmin")
 	{
 		superAdmin.GET("/fetch", authorization.Authorize("superAdmin", "view"), ReadSuperAdmin)
 		superAdmin.PUT("/update", authorization.Authorize("superAdmin", "update"), UpdateSuperAdmin)
