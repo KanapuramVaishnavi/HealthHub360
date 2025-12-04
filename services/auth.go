@@ -286,7 +286,7 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 	roleCode := userDoc["roleCode"].(string)
 	tenantId := ""
 	isSuperAdmin := false
-	if collection == superAdminCollection {
+	if collection == SuperAdminCollection {
 		tenantId = ""
 		isSuperAdmin = true
 	} else {

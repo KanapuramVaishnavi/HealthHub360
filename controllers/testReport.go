@@ -10,7 +10,7 @@ import (
 )
 
 func TestReport(router *gin.Engine) {
-	test := router.Group("/testReport", authorization.JWTAuth())
+	test := router.Group("/testReport")
 	test.POST("/create/:patientId", authorization.Authorize("testReport", "create"), CreateTestReport)
 }
 

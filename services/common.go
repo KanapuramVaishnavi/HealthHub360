@@ -26,9 +26,9 @@ import (
 )
 
 const (
-	superAdminCollection     = "SUPERADMIN"
+	SuperAdminCollection     = "SUPERADMIN"
+	TenantCollection         = "TENANT"
 	hospitalCollection       = "HOSPITAL"
-	tenantCollection         = "TENANT"
 	doctorCollection         = "DOCTOR"
 	doctorTimeSlotCollection = "DOCTOR_TIMESLOTS"
 	receptionistCollection   = "RECEPTIONIST"
@@ -41,6 +41,7 @@ const (
 	testCollection           = "TEST"
 	pharmacistCollection     = "PHARMACIST"
 	prescriptionCollection   = "PRESCRIPTION"
+	RoleCollection           = "ROLE"
 )
 
 var ctx context.Context = context.Background()
@@ -84,7 +85,7 @@ func GenerateEmpCode(collName string) (string, error) {
 		prefix = "T"
 	case "SUPERADMIN":
 		prefix = "S"
-	case "ROLE", "role":
+	case "ROLE":
 		prefix = "R"
 		sortField = "roleCode"
 	default:

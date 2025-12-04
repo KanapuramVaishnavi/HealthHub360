@@ -9,12 +9,14 @@ import (
 )
 
 func Test(router *gin.Engine) {
-	test := router.Group("/test", authorization.JWTAuth())
-	test.POST("/create", authorization.Authorize("test", "create"), Createtest)
-	test.PUT("/update/:code", authorization.Authorize("test", "update"), Updatetest)
-	test.GET("/fetch/:code", authorization.Authorize("test", "view"), FetchtestByCode)
-	test.GET("/fetchAll/:tenantId", authorization.Authorize("test", "view"), FetchAlltests)
-	test.DELETE("/delete/:code", authorization.Authorize("test", "delete"), Deletetest)
+	test := router.Group("/test")
+	{
+		test.POST("/create", authorization.Authorize("test", "create"), Createtest)
+		test.PUT("/update/:code", authorization.Authorize("test", "update"), Updatetest)
+		test.GET("/fetch/:code", authorization.Authorize("test", "view"), FetchtestByCode)
+		test.GET("/fetchAll/:tenantId", authorization.Authorize("test", "view"), FetchAlltests)
+		test.DELETE("/delete/:code", authorization.Authorize("test", "delete"), Deletetest)
+	}
 }
 
 /*

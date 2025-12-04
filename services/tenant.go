@@ -76,10 +76,16 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 }
 
 func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{}, error) {
-	coll := tenantCollection
+	superAdminId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return nil, err
+	}
+	coll := TenantCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
-		"code": tenantId,
+		"code":      tenantId,
+		"createdBy": superAdminId,
 	}
 	key := util.TenantKey + tenantId
 	cached := make(map[string]interface{})
@@ -104,7 +110,7 @@ where it matches with the filter given with it and perform
 the Find all Function
 */
 func FetchAllTenants(c *gin.Context) ([]interface{}, error) {
-	collection := db.OpenCollections(tenantCollection)
+	collection := db.OpenCollections(TenantCollection)
 	results, err := db.FindAll(c, collection, nil, nil)
 	if err != nil {
 		return []interface{}{}, err
@@ -168,7 +174,7 @@ Returns error if tenant not found.
 */
 func fetchExistingTenant(code string) (map[string]interface{}, error) {
 
-	collection := db.OpenCollections(tenantCollection)
+	collection := db.OpenCollections(TenantCollection)
 	filter := bson.M{"code": code}
 
 	var existing map[string]interface{}
@@ -223,7 +229,7 @@ updateTenantInDB applies the parsed updates to the tenant document in MongoDB.
 */
 func updateTenantInDB(code string, update bson.M) error {
 
-	collection := db.OpenCollections(tenantCollection)
+	collection := db.OpenCollections(TenantCollection)
 	filter := bson.M{"code": code}
 
 	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
@@ -243,7 +249,7 @@ func DeleteTenantByCode(c *gin.Context, code string) error {
 	if code == "" {
 		return errors.New("tenant code required")
 	}
-	collection := db.OpenCollections(tenantCollection)
+	collection := db.OpenCollections(TenantCollection)
 	filter := bson.M{"code": code}
 	var res interface{}
 	err := db.FindOne(c, collection, filter, res)

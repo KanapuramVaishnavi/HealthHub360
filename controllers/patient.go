@@ -10,12 +10,14 @@ import (
 )
 
 func Patient(router *gin.Engine) {
-	patient := router.Group("/patient", authorization.JWTAuth())
-	patient.POST("/create", authorization.Authorize("patient", "create"), CreatePatient)
-	patient.GET("/fetch/:patientId", authorization.Authorize("patient", "view"), FetchPatientByCode)
-	patient.PATCH("/update/:patientId", authorization.Authorize("patient", "update"), UpdatePatientByCode)
-	patient.GET("/fetchAll", authorization.Authorize("patient", "view"), FetchAllPatients)
-	patient.DELETE("/delete/:code", authorization.Authorize("patient", "delete"), DeletePatient)
+	patient := router.Group("/patient")
+	{
+		patient.POST("/create", authorization.Authorize("patient", "create"), CreatePatient)
+		patient.GET("/fetch/:patientId", authorization.Authorize("patient", "view"), FetchPatientByCode)
+		patient.PATCH("/update/:patientId", authorization.Authorize("patient", "update"), UpdatePatientByCode)
+		patient.GET("/fetchAll", authorization.Authorize("patient", "view"), FetchAllPatients)
+		patient.DELETE("/delete/:code", authorization.Authorize("patient", "delete"), DeletePatient)
+	}
 }
 
 func CreatePatient(c *gin.Context) {

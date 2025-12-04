@@ -105,7 +105,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	return nil
 }
 func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
-	coll := db.OpenCollections(superAdminCollection)
+	coll := db.OpenCollections(SuperAdminCollection)
 	data, err := db.FindAll(c, coll, bson.M{}, nil)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ updateSuperAdminInDB applies the parsed updates to the SuperAdmin document in Mo
 */
 func updateSuperAdminInDB(code string, update bson.M) error {
 
-	collection := db.OpenCollections(superAdminCollection)
+	collection := db.OpenCollections(SuperAdminCollection)
 	filter := bson.M{"code": code}
 
 	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})

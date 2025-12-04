@@ -10,7 +10,7 @@ import (
 )
 
 func Pharmacist(router *gin.Engine) {
-	pharma := router.Group("/pharmacist", authorization.JWTAuth())
+	pharma := router.Group("/pharmacist")
 	{
 		pharma.POST("/create", authorization.Authorize("pharmacist", "create"), CreatePharmacist)
 		pharma.GET("/fetch/:code/:tenantid", authorization.Authorize("pharmacist", "view"), FetchPharmacistByCode)

@@ -9,7 +9,7 @@ import (
 )
 
 func Doctor(router *gin.Engine) {
-	doctor := router.Group("/doctor", authorization.JWTAuth())
+	doctor := router.Group("/doctor")
 	doctor.POST("/create", authorization.Authorize("doctor", "create"), CreateDoctor)
 	doctor.PUT("/update/:code", authorization.Authorize("doctor", "update"), UpdateDoctor)
 	doctor.GET("/fetch/:code/:tenantId", authorization.Authorize("doctor", "view"), FetchDoctorByCode)
