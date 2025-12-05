@@ -88,11 +88,18 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{}, error) {
 
 	coll := receptionistCollection
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := GetFromContext[string](c, "tenantId")
 	if err != nil {
-		log.Println("Error from the getTenantIdFromToken:", err)
+		log.Println("Error while fetching tenantId from getFromContext: ", err)
 		return nil, err
 	}
+	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
+	if err != nil {
+		log.Println("Error while fetching isSuperAdmin from getFromContext: ", err)
+		return nil, err
+	}
+	log.Println("tenantId from getFromContext: ", tenantId)
+	log.Println("isSuperAdmin from getFromContext: ", isSuperAdmin)
 	cached := make(map[string]interface{})
 	key := util.ReceptionistKey + code
 
@@ -103,8 +110,10 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		if !ok {
 			return nil, errors.New("cached doctor missing tenantId")
 		}
-		if tenantId != tenantIdFromCache {
-			return nil, errors.New("tenant not allowed to fetch this doctor")
+		if !isSuperAdmin {
+			if tenantId != tenantIdFromCache {
+				return nil, errors.New("tenant not allowed to fetch this doctor")
+			}
 		}
 		return cached, nil
 	}
@@ -120,8 +129,10 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		return nil, errors.New("Error from the findOne function:")
 	}
 	value := result["tenantId"].(string)
-	if value != tenantId {
-		return nil, errors.New("This User admin doesnot have access")
+	if !isSuperAdmin {
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access")
+		}
 	}
 	err = redis.SetCache(c, key, result)
 	if err != nil {

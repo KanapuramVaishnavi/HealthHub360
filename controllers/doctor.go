@@ -12,7 +12,7 @@ func Doctor(router *gin.Engine) {
 	doctor := router.Group("/doctor")
 	doctor.POST("/create", authorization.Authorize("doctor", "create"), CreateDoctor)
 	doctor.PUT("/update/:code", authorization.Authorize("doctor", "update"), UpdateDoctor)
-	doctor.GET("/fetch/:code/:tenantId", authorization.Authorize("doctor", "view"), FetchDoctorByCode)
+	doctor.GET("/fetch/:code", authorization.Authorize("doctor", "view"), FetchDoctorByCode)
 	doctor.GET("/fetchAll/:tenantId", authorization.Authorize("doctor", "view"), FetchAllDoctors)
 	doctor.DELETE("/delete/:code", authorization.Authorize("doctor", "delete"), DeleteDoctor)
 }

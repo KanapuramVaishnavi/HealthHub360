@@ -13,7 +13,7 @@ func Pharmacist(router *gin.Engine) {
 	pharma := router.Group("/pharmacist")
 	{
 		pharma.POST("/create", authorization.Authorize("pharmacist", "create"), CreatePharmacist)
-		pharma.GET("/fetch/:code/:tenantid", authorization.Authorize("pharmacist", "view"), FetchPharmacistByCode)
+		pharma.GET("/fetch/:code", authorization.Authorize("pharmacist", "view"), FetchPharmacistByCode)
 		pharma.GET("/fetchAll/:tenantid", authorization.Authorize("pharmacist", "view"), FetchAllPharmacist)
 	}
 }

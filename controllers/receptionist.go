@@ -13,7 +13,7 @@ func Receptionist(router *gin.Engine) {
 	recep := router.Group("/receptionist")
 	{
 		recep.POST("/create", authorization.Authorize("receptionist", "create"), CreateReceptionist)
-		recep.GET("/fetch/:code/:tenantid", authorization.Authorize("receptionist", "view"), FetchReceptionistByCode)
+		recep.GET("/fetch/:code", authorization.Authorize("receptionist", "view"), FetchReceptionistByCode)
 		recep.GET("/fetchAll/:tenantid", authorization.Authorize("receptionist", "view"), FetchAllReceptionist)
 	}
 }
