@@ -163,6 +163,12 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, code string) erro
 func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{}, error) {
 	coll := doctorCollection
 	key := util.DoctorKey + doctorId
+	isSuperAdmin, err := IsSuperAdmin(c)
+	if err != nil {
+		log.Println("Error from isSuperAdmin: ", err)
+		return nil, err
+	}
+
 	tenantId, err := GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
@@ -177,8 +183,10 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 		if !ok {
 			return nil, errors.New("cached doctor missing tenantId")
 		}
-		if tenantId != tenantIdFromCache {
-			return nil, errors.New("tenant not allowed to fetch this doctor")
+		if !isSuperAdmin {
+			if tenantId != tenantIdFromCache {
+				return nil, errors.New("tenant not allowed to fetch this doctor")
+			}
 		}
 		return cached, nil
 	}
@@ -194,10 +202,11 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 		return nil, errors.New("Error from the findOne function:")
 	}
 	value := result["tenantId"].(string)
-	if value != tenantId {
-		return nil, errors.New("This User admin doesnot have access because of tenantId mismatch")
+	if !isSuperAdmin {
+		if value != tenantId {
+			return nil, errors.New("This User admin doesnot have access because of tenantId mismatch")
+		}
 	}
-
 	err = redis.SetCache(c, key, result)
 	if err != nil {
 		log.Println("Error from setCache")

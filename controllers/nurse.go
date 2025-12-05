@@ -13,7 +13,7 @@ func Nurse(router *gin.Engine) {
 	{
 		nurse.POST("/create", authorization.Authorize("nurse", "create"), CreateNurse)
 		nurse.PUT("/update/:code", authorization.Authorize("nurse", "update"), UpdateNurse)
-		nurse.GET("/fetch/:code/:tenantid", authorization.Authorize("nurse", "view"), FetchNurseByCode)
+		nurse.GET("/fetch/:code", authorization.Authorize("nurse", "view"), FetchNurseByCode)
 		nurse.GET("/fetchAll/:tenantid", authorization.Authorize("nurse", "view"), FetchAllNurses)
 		nurse.GET("/fetchAllOfDoc/:doctorId", authorization.Authorize("nurse", "view"), FetchAllNursesofDoctor)
 		nurse.DELETE("/delete/:nurseid", authorization.Authorize("nurse", "delete"), DeleteNurseByCode)
@@ -63,8 +63,7 @@ func UpdateNurse(c *gin.Context) {
  */
 func FetchNurseByCode(c *gin.Context) {
 	code := c.Param("code")
-	tenantId := c.Param("tenantId")
-	data, err := services.FetchNurseByCode(c, code, tenantId)
+	data, err := services.FetchNurseByCode(c, code)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

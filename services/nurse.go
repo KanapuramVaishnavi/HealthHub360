@@ -185,11 +185,22 @@ func FetchAllNursesofDoctor(c *gin.Context, Docid string) ([]interface{}, error)
 * Check whether the tenantId matches with the input tenantId
 * If comparision works then return the docs
  */
-func FetchNurseByCode(c *gin.Context, code string, tenantId string) (map[string]interface{}, error) {
+func FetchNurseByCode(c *gin.Context, code string) (map[string]interface{}, error) {
 
 	coll := nurseCollection
 	key := util.NurseKey + code
-
+	tenantId, err := GetFromContext[string](c, "tenantId")
+	if err != nil {
+		log.Println("Error while fetching tenantId from getFromContext")
+		return nil, err
+	}
+	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
+	if err != nil {
+		log.Println("Error while fetching isSuperAdmin from getFromContext")
+		return nil, err
+	}
+	log.Println("tenantId from context: ", tenantId)
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
 	if err == nil && exists {
@@ -197,35 +208,36 @@ func FetchNurseByCode(c *gin.Context, code string, tenantId string) (map[string]
 		if !ok {
 			return nil, errors.New("cached doctor missing tenantId")
 		}
-		if tenantId != tenantIdFromCache {
-			return nil, errors.New("tenant not allowed to fetch this doctor")
+		if !isSuperAdmin {
+			if tenantId != tenantIdFromCache {
+				return nil, errors.New("tenant not allowed to fetch this doctor")
+			}
 		}
 		return cached, nil
 	}
-
 	result := make(map[string]interface{})
 	collection := db.OpenCollections(coll)
+	log.Println("Error from getCache:", err)
+	filter := bson.M{
+		"code": code,
+	}
+	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from getCache:", err)
-		filter := bson.M{
-			"code": code,
-		}
-		err := db.FindOne(c, collection, filter, result)
-
-		if err != nil {
-			log.Println("Error from findOne function")
-			return nil, errors.New("Error from the findOne function:")
-		}
+		log.Println("Error from findOne function")
+		return nil, errors.New("Error from the findOne function:")
+	}
+	if !isSuperAdmin {
 		value := result["tenantId"].(string)
 		if value != tenantId {
 			return nil, errors.New("This User admin doesnot have access")
 		}
-		err = redis.SetCache(c, key, result)
-		if err != nil {
-			log.Println("Error from setCache")
-			return nil, err
-		}
 	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache")
+		return nil, err
+	}
+
 	return result, nil
 }
 
