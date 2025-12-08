@@ -12,8 +12,42 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) error {
+
+	medicalRecord, err := FetchMedicalRecordByCode(c, medicalRecordId)
+	if err != nil {
+		log.Println("Error from fetchMedicalRecordByCode: ", err)
+		return err
+	}
+	doctorIdVal, exists := medicalRecord["doctorId"]
+	if !exists {
+		log.Println("doctorId doesnot exists in medicalRecord")
+		return errors.New("doctorId doesnot exists in medicalRecord")
+	}
+	doctorIdFromMedicalRecord, ok := doctorIdVal.(string)
+	if !ok {
+		log.Println("Type assertion error while fetching doctorId from medicalRecord")
+		return errors.New("Type assertion error while fetching doctorId from medicalRecord")
+	}
+	if doctorId != doctorIdFromMedicalRecord {
+		log.Println("User doesnot have access")
+		return errors.New("User doesnot have access")
+	}
+	return nil
+}
 func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalRecordId string) (string, error) {
 
+	doctorId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext(doctorId): ", err)
+		return "", err
+	}
+
+	err = VerifyHasAccess(c, doctorId, medicalRecordId)
+	if err != nil {
+		log.Println("Error from VerifyHasAccess: ", err)
+		return "", err
+	}
 	rawMedicines, ok := data["medicines"].([]interface{})
 	if !ok {
 		log.Println("Medicines field must be list of interface")
@@ -58,11 +92,6 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		}
 	}
 
-	doctorId, err := GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext(doctorId): ", err)
-		return "", err
-	}
 	tenantId, err := GetFromContext[string](c, "tenantId")
 	if err != nil {
 		log.Println("Error from getFromContext(tenantId): ", err)
@@ -74,13 +103,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 	if err != nil {
 		return "", err
 	}
-	medRecDoc := make(map[string]interface{})
-	medRecDoc["prescriptionId"] = prescriptionCode
-	_, err = UpdateMedicalRecord(c, medicalRecordId, medRecDoc)
-	if err != nil {
-		log.Println("Error from updateMedicalRecord: ", err)
-		return "", err
-	}
+
 	data["code"] = prescriptionCode
 	data["tenantId"] = tenantId
 	data["createdBy"] = doctorId
@@ -91,6 +114,14 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 	collection := db.OpenCollections(coll)
 	_, err = db.CreateOne(c, collection, data)
 	if err != nil {
+		return "", err
+	}
+
+	medRecDoc := make(map[string]interface{})
+	medRecDoc["prescriptionId"] = prescriptionCode
+	_, err = UpdateMedicalRecord(c, medicalRecordId, medRecDoc)
+	if err != nil {
+		log.Println("Error from updateMedicalRecord: ", err)
 		return "", err
 	}
 

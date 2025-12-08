@@ -12,11 +12,10 @@ func Routes(r *gin.Engine) {
 	//public
 	r.POST("/role/create/superAdmin", controllers.CreateRole)
 	r.POST("/superAdmin/create", controllers.CreateSuperAdmin)
-
+	controllers.Auth(r)
+	controllers.Role(r)
 	//privateroutes
 	r.Use(authorization.JWTAuth())
-	controllers.Role(r)
-	controllers.Auth(r)
 	controllers.SuperAdmin(r)
 	controllers.Tenant(r)
 	controllers.Hospital(r)

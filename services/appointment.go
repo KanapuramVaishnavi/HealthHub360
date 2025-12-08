@@ -340,17 +340,24 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 	}
 	log.Println("Patient: ", patient)
 	log.Printf("patient appointments type %T", patient["appointments"])
-	val, ok := patient["appointments"].(primitive.A)
-	if !ok {
-		log.Println("Unable to fetch appointments")
-		return errors.New("Unable to fetch appointments")
-	}
 	var appointments []string
-	for _, a := range val {
-		if str, ok := a.(string); ok {
-			appointments = append(appointments, str)
-		} else {
-			log.Println("Non-string value in appointments:", a)
+	raw, exists := patient["appointments"]
+	if !exists || raw == nil {
+		appointments = []string{}
+	} else {
+		val, ok := raw.(primitive.A)
+		log.Println("val: ", val)
+		if !ok {
+			log.Println("Unable to fetch appointments")
+			return errors.New("Unable to fetch appointments")
+		}
+		var appointments []string
+		for _, a := range val {
+			if str, ok := a.(string); ok {
+				appointments = append(appointments, str)
+			} else {
+				log.Println("Non-string value in appointments:", a)
+			}
 		}
 	}
 
@@ -481,8 +488,8 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 	return "created Successfully", nil
 }
 
-func canAccess(collFromContext string, userData, record map[string]interface{},
-	tenantId string, code string, isSuperAdmin bool) error {
+func canAccess(collFromContext string, userData, record map[string]interface{}, tenantId string, code string, isSuperAdmin bool) error {
+	log.Println("record: ", record)
 
 	if isSuperAdmin {
 		return nil
@@ -523,9 +530,7 @@ func checkCacheAccess(c *gin.Context, key string, collFromContext string, userDa
 
 	return cached, true, nil
 }
-func fetchFromDB(c *gin.Context, appointmentId string, key string,
-	collFromContext string, userData map[string]interface{},
-	tenantId, code string, isSuperAdmin bool) (map[string]interface{}, error) {
+func fetchFromDB(c *gin.Context, appointmentId string, key string, collFromContext string, userData map[string]interface{}, tenantId, code string, isSuperAdmin bool) (map[string]interface{}, error) {
 
 	coll := db.OpenCollections(appointmentCollection)
 
@@ -574,8 +579,7 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 		return cached, err
 	}
 
-	return fetchFromDB(c, appointmentId, key,
-		collFromContext, userData, tenantId, code, isSuperAdmin)
+	return fetchFromDB(c, appointmentId, key, collFromContext, userData, tenantId, code, isSuperAdmin)
 }
 
 // func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {

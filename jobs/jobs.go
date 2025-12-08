@@ -134,8 +134,8 @@ func SeedDoctorLeaves() {
 		DoctorId string
 		Date     string
 	}{
-		{"D0001", "27-11-2025"},
-		{"D0002", "27-11-2025"},
+		{"D0001", "08-12-2025"},
+		{"D0002", "09-12-2025"},
 	}
 
 	for _, leave := range staticLeaves {

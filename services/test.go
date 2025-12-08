@@ -184,7 +184,7 @@ func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, err
 	}
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function", err)
+		log.Println("Error from findOne function ", err)
 		return nil, errors.New("Error from the findOne function:")
 	}
 	if !sa {
