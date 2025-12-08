@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error) {
@@ -20,7 +21,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 			return "", err
 		}
 	}
-	intFields := []string{"noOfStrips", "tabletsPerStrip"}
+	intFields := []string{"noOfStrips", "tabletsPerStrip", "pricePerStrip"}
 	for _, v := range intFields {
 		number, ok := data[v].(float64)
 		if !ok {
@@ -45,6 +46,19 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		return "", errors.New("Type assertion error")
 	}
 	data["createdBy"] = pharmacistId
+
+	coll := medicineCollection
+	collection := db.OpenCollections(coll)
+
+	filter := bson.M{
+		"name": data["name"],
+	}
+	medicine := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, medicine)
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		log.Println("Medicine with same name already exists: ", err)
+		return "", errors.New("Medicine with same name already exists")
+	}
 	code, err := GenerateEmpCode(medicineCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
@@ -65,8 +79,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	data["tenantId"] = pharmacist["tenantId"].(string)
 	data["hospitalId"] = pharmacist["createdBy"].(string)
 	log.Println("MEDICINE CODE:", code)
-	coll := medicineCollection
-	collection := db.OpenCollections(coll)
+
 	inserted, err := db.CreateOne(c, collection, data)
 	if err != nil {
 		log.Println("Error from createOne: ", err)

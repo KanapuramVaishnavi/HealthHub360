@@ -85,7 +85,7 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 * Check whether the tenantId matches with the input tenantId
 * If comparision works then return the docs
  */
-func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{}, error) {
+func FetchReceptionistByCode(c *gin.Context, receptionistId string) (map[string]interface{}, error) {
 
 	coll := receptionistCollection
 	tenantId, err := GetFromContext[string](c, "tenantId")
@@ -93,47 +93,58 @@ func FetchReceptionistByCode(c *gin.Context, code string) (map[string]interface{
 		log.Println("Error while fetching tenantId from getFromContext: ", err)
 		return nil, err
 	}
+
 	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
 	if err != nil {
 		log.Println("Error while fetching isSuperAdmin from getFromContext: ", err)
 		return nil, err
 	}
+
 	log.Println("tenantId from getFromContext: ", tenantId)
 	log.Println("isSuperAdmin from getFromContext: ", isSuperAdmin)
+
+	code, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext(code): ", err)
+		return nil, err
+	}
+
+	ctxCollection, err := GetFromContext[string](c, "collection")
+	if err != nil {
+		log.Println("Error from getFromContext(collection): ", err)
+		return nil, err
+	}
+
 	cached := make(map[string]interface{})
-	key := util.ReceptionistKey + code
+	key := util.ReceptionistKey + receptionistId
 
-	exists, err := redis.GetCache(c, key, &cached)
-
-	if err == nil && exists {
-		tenantIdFromCache, ok := cached["tenantId"].(string)
-		if !ok {
-			return nil, errors.New("cached doctor missing tenantId")
-		}
-		if !isSuperAdmin {
-			if tenantId != tenantIdFromCache {
-				return nil, errors.New("tenant not allowed to fetch this doctor")
-			}
-		}
+	cached, exists, err := FetchByCodeFromCache(c, key, isSuperAdmin, tenantId, code, ctxCollection)
+	if err != nil {
+		log.Println("Error from FetchByCodeFromCache: ", err)
+		return nil, err
+	}
+	if exists && cached != nil {
 		return cached, nil
 	}
+
 	result := make(map[string]interface{})
 	collection := db.OpenCollections(coll)
 	log.Println("Error from getCache:", err)
 	filter := bson.M{
-		"code": code,
+		"code": receptionistId,
 	}
+
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from findOne function")
 		return nil, errors.New("Error from the findOne function:")
 	}
-	value := result["tenantId"].(string)
-	if !isSuperAdmin {
-		if value != tenantId {
-			return nil, errors.New("This User admin doesnot have access")
-		}
+	err = HasAccess(isSuperAdmin, ctxCollection, tenantId, code, result)
+	if err != nil {
+		log.Println("Error from HasAccess: ", err)
+		return nil, err
 	}
+
 	err = redis.SetCache(c, key, result)
 	if err != nil {
 		log.Println("Error from setCache")

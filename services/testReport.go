@@ -28,14 +28,12 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	medicalRecordId := latestApp["medicalId"].(string)
 	medicalRecord, err := FetchMedicalRecordByCode(c, medicalRecordId)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("Hdfgh0j")
-
+	log.Println("MedicalRecord: ", medicalRecord)
 	testlist, err := getMedicalRecordTestList(medicalRecord)
 	if err != nil {
 		return nil, err
@@ -49,7 +47,6 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 	if !ok {
 		return nil, errors.New("doctorId format invalid")
 	}
-
 	var reportCodes []string
 	for _, testId := range testlist {
 		code, err := createSingleTestReport(c, coll, testId, patientId, doctorId)
@@ -58,7 +55,6 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 		}
 		reportCodes = append(reportCodes, code)
 	}
-
 	if err := updateMedicalRecordWithReports(c, medicalRecordId, reportCodes); err != nil {
 		return nil, err
 	}
@@ -153,9 +149,8 @@ func createSingleTestReport(c *gin.Context, coll interface{}, testId string, pat
 	if err != nil {
 		return "", err
 	}
-
 	testReport := map[string]interface{}{
-		"testName":  dummyTest["testName"],
+		"testName":  testId,
 		"price":     dummyTest["price"],
 		"patientId": patientId,
 		"doctorId":  doctorId,

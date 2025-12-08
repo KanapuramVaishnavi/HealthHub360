@@ -229,7 +229,7 @@ func UpdateUserToken(ctx context.Context, collectionName string, code string, to
 * UpdateToken
  */
 func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{}, error) {
-
+	log.Println("Hi1")
 	if err := validateLoginInput(data); err != nil {
 		log.Println("error from validation input for the login")
 		return nil, err

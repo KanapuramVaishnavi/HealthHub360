@@ -532,26 +532,31 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 	var existing models.Login
 	err := db.FindOne(ctx, loginCollection, filter, &existing)
 	log.Println(err)
-	if err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			login := models.Login{
-				Code:       code,
-				Collection: role,
-				Email:      email,
-				PhoneNo:    phone,
-				Password:   password,
-			}
-
-			_, err = db.CreateOne(ctx, loginCollection, login)
-			if err != nil {
-				return fmt.Errorf("failed to create login record: %v", err)
-			}
-			return nil
-		}
-		log.Println("Error from findOne function", err)
+	if err == nil {
+		log.Println("Already exists in db: ", err)
+		return errors.New("Already exists in loginCollection")
 	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		log.Println("Error from FindOne (unexpected):", err)
+		return fmt.Errorf("error checking existing login: %w", err)
+	}
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		login := models.Login{
+			Code:       code,
+			Collection: role,
+			Email:      email,
+			PhoneNo:    phone,
+			Password:   password,
+		}
 
-	return fmt.Errorf("findOne error: %v", err)
+		_, err = db.CreateOne(ctx, loginCollection, login)
+		if err != nil {
+			log.Println("Error from createOne: ", err)
+			return fmt.Errorf("failed to createOne login record: %v", err)
+		}
+		return nil
+	}
+	return nil
 }
 
 func CacheUserInRedis(c *gin.Context, code string, key string, data map[string]interface{}, collection string) error {
@@ -601,4 +606,50 @@ func GetFromContext[T any](c *gin.Context, key string) (T, error) {
 	}
 
 	return value, nil
+}
+
+func FetchByCodeFromCache(c *gin.Context, key string, isSuperAdmin bool, tenantId string, code string, ctxCollection string) (map[string]interface{}, bool, error) {
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err != nil || !exists {
+		return nil, false, err
+	}
+
+	if err := HasAccess(isSuperAdmin, ctxCollection, tenantId, code, cached); err != nil {
+		return nil, false, err
+	}
+
+	return cached, true, nil
+}
+
+func HasAccess(isSuperAdmin bool, cxtCollection string, tenantId string, code string, doc map[string]interface{}) error {
+
+	if isSuperAdmin {
+		return nil
+	}
+
+	tenantIdFromDoc, ok := doc["tenantId"].(string)
+	if !ok {
+		return errors.New("missing tenantId in document")
+	}
+
+	if cxtCollection == TenantCollection {
+		if tenantId != tenantIdFromDoc {
+			return errors.New("tenant access denied")
+		}
+	}
+
+	createdByFromDoc, ok := doc["createdBy"].(string)
+	if !ok {
+		return errors.New("missing createdBy in document")
+	}
+
+	if cxtCollection == hospitalCollection {
+		if code != createdByFromDoc {
+			return errors.New("user access denied")
+		}
+	}
+
+	return nil
 }
