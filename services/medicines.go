@@ -6,6 +6,7 @@ import (
 	"HealthHub360/util"
 	"errors"
 	"log"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -13,7 +14,7 @@ import (
 )
 
 func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error) {
-	fields := []string{"name", "dosage", "expiryDate"}
+	fields := []string{"name", "dosage", "expiryDate", "noOfStrips", "tabletsPerStrip", "pricePerStrip"}
 	for _, value := range fields {
 		err := getTrimmedString(data, value)
 		if err != nil {
@@ -21,14 +22,14 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 			return "", err
 		}
 	}
-	intFields := []string{"noOfStrips", "tabletsPerStrip", "pricePerStrip"}
-	for _, v := range intFields {
-		number, ok := data[v].(float64)
-		if !ok {
-			return "", errors.New(v + " must be a number")
-		}
-		data[v] = int(number)
-	}
+	// intFields := []string{"noOfStrips", "tabletsPerStrip", "pricePerStrip"}
+	// for _, v := range intFields {
+	// 	number, ok := data[v].(float64)
+	// 	if !ok {
+	// 		return "", errors.New(v + " must be a number")
+	// 	}
+	// 	data[v] = int(number)
+	// }
 	dateStr, err := NormalizeDate(data["expiryDate"].(string))
 	if err != nil {
 		log.Println("Error from normalizeDate: ", err)
@@ -45,8 +46,22 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		log.Println("Type assertion error")
 		return "", errors.New("Type assertion error")
 	}
+	noOfStripsVal, ok := data["noOfStrips"].(string)
+	if !ok {
+		log.Println("Unable to get noOfStrips")
+		return "", errors.New("Unable to get noOfStrips")
+	}
+	noOfStrips, _ := strconv.Atoi(noOfStripsVal)
+	tabletsPerStripVal, ok := data["tabletsPerStrip"].(string)
+	if !ok {
+		log.Println("Unable to get noOfStrips")
+		return "", errors.New("Unable to get noOfStrips")
+	}
+	tabletsPerStrip, _ := strconv.Atoi(tabletsPerStripVal)
 	data["createdBy"] = pharmacistId
-
+	totalNoOfTabletsVal := noOfStrips * tabletsPerStrip
+	totalNoOfTablets := strconv.Itoa(totalNoOfTabletsVal)
+	data["totalNoOfTablets"] = totalNoOfTablets
 	coll := medicineCollection
 	collection := db.OpenCollections(coll)
 
