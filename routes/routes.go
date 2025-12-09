@@ -30,4 +30,5 @@ func Routes(r *gin.Engine) {
 	controllers.Prescription(r)
 	controllers.TestReport(r)
 	controllers.Test(r)
+	controllers.Bill(r)
 }

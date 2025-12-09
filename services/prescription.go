@@ -60,7 +60,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 			return "", errors.New("invalid medicine format")
 		}
 
-		fields := []string{"medicineId", "instructions"}
+		fields := []string{"medicineId", "instructions", "dosagePerFrequency", "noOfDays"}
 		for _, field := range fields {
 			err := getTrimmedString(medicine, field)
 			if err != nil {
@@ -68,14 +68,14 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 			}
 		}
 
-		intFields := []string{"dosagePerFrequency", "noOfDays"}
-		for _, field := range intFields {
-			floatValue, ok := medicine[field].(float64)
-			if !ok {
-				return "", errors.New("integer field invalid: " + field)
-			}
-			medicine[field] = int(floatValue)
-		}
+		// intFields := []string{"dosagePerFrequency", "noOfDays"}
+		// for _, field := range intFields {
+		// 	floatValue, ok := medicine[field].(float64)
+		// 	if !ok {
+		// 		return "", errors.New("integer field invalid: " + field)
+		// 	}
+		// 	medicine[field] = int(floatValue)
+		// }
 
 		frequency, ok := medicine["frequency"].(map[string]interface{})
 		if !ok {
@@ -134,12 +134,18 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 }
 
 func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]interface{}, error) {
-	doctorId, err := GetFromContext[string](c, "code")
+
+	// collFromContext, err := GetFromContext[string](c, "collection")
+	// if err != nil {
+	// 	log.Println("Error from getFromContext: ", err)
+	// 	return nil, err
+	// }
+	tenantId, err := GetFromContext[string](c, "tenantId")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return nil, err
 	}
-	coll := prescriptionId
+	coll := prescriptionCollection
 	collection := db.OpenCollections(coll)
 	key := util.PrescriptionKey + prescriptionId
 	cached := make(map[string]interface{})
@@ -151,26 +157,28 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 	filter := bson.M{
 		"code": prescriptionId,
 	}
+	log.Println("filter: ", filter)
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, result)
+	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	preDocIdVal, ok := result["doctorId"]
+	preTenantIdVal, ok := result["tenantId"]
 	if !ok {
-		log.Println("doctorId field not present in prescription")
-		return nil, errors.New("doctorId field not present in prescription")
+		log.Println("tenantId field not present in prescription")
+		return nil, errors.New("tenantId field not present in prescription")
 	}
-	preDocId, ok := preDocIdVal.(string)
+	preTenantId, ok := preTenantIdVal.(string)
 	if !ok {
-		log.Println("doctorId field in prescription not in string type")
-		return nil, errors.New("doctorId field in prescription not in string type")
+		log.Println("tenantId field in prescription not in string type")
+		return nil, errors.New("tenantId field in prescription not in string type")
 	}
-	if doctorId != preDocId {
-		log.Println("Doctor doesnot have access")
-		return nil, errors.New("Doctor doesnot have access")
+	if tenantId != preTenantId {
+		log.Println("User doesnot have access")
+		return nil, errors.New("User doesnot have access")
 	}
+
 	return result, nil
 }
 

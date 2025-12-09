@@ -1,246 +1,410 @@
 package services
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
+	"HealthHub360/config/db"
+	"HealthHub360/config/redis"
+	"HealthHub360/util"
 	"errors"
-	"fmt"
-	"html/template"
-	"io/ioutil"
-	"net/http"
-	"os"
-	"os/exec"
+	"log"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-func BuildBillingData(c *gin.Context, patient map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{})
-
-	patientName := patient["name"].(string)
-	patientID := patient["code"].(string)
-	patientemail := patient["email"].(string)
-	age := toInt(patient["age"])
-	gender := patient["gender"].(string)
-	admissionDate := getString(patient["admissionDate"])
-	phone := getString(patient["phoneNo"])
-
-	rawIDs, ok := patient["appointments"].([]interface{})
-	if !ok || len(rawIDs) == 0 {
-		return nil, errors.New("no appointment IDs found")
-	}
-
-	appointmentID := rawIDs[len(rawIDs)-1].(string)
-	appointment, err := FetchAppointmentByCode(c, appointmentID)
+func CheckForAccess(c *gin.Context, patient map[string]interface{}) error {
+	pharamcistTenantId, err := GetFromContext[string](c, "tenantId")
 	if err != nil {
-		return nil, err
-	}
-	//   appointment["isPr"]
-
-	hospital, err := FetchHospitalByCode(c, appointment["hospitalId"].(string))
-	if err != nil {
-		return nil, err
-	}
-
-	totalTests := 0
-	totalMeds := 0
-
-	if testReports, ok := appointment["testReports"].([]interface{}); ok {
-		for _, tr := range testReports {
-			testID := tr.(string)
-			t, err := FetchTestReportByCode(c, testID)
-			if err != nil {
-				return nil, err
-			}
-			v, _ := strconv.Atoi(t["price"].(string))
-			totalTests += v
-		}
-	}
-
-	var medications []map[string]interface{}
-	if presID, ok := appointment["prescriptionId"].(string); ok && presID != "" {
-		pres, err := FetchPrescriptionByCode(c, presID)
-		if err != nil {
-			return nil, err
-		}
-
-		rawMeds := pres["medications"].([]interface{})
-		for _, m := range rawMeds {
-			med := m.(map[string]interface{})
-			medications = append(medications, med)
-		}
-
-		pval, _ := strconv.Atoi(pres["price"].(string))
-		totalMeds += pval
-	}
-
-	grandTotal := totalTests + totalMeds
-
-	logo, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/smalllogo.jpg")
-	qr, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/qrcode.png")
-	link, err := CreateRazorpayPaymentLink(2000, patientName, patientemail, phone)
-	if err != nil {
-		return nil, err
-	}
-	url, err := GenerateQRCode(link)
-	if err != nil {
-		return nil, err
-	}
-	result["HospitalLogo"] = template.URL(logo)
-	result["Barcode"] = template.URL(qr)
-
-	result["HospitalName"] = hospital["name"]
-	result["HospitalAddress"] = hospital["address"]
-	result["HospitalContact"] = hospital["phoneNo"]
-
-	result["PatientName"] = patientName
-	result["PatientID"] = patientID
-	result["Age"] = age
-	result["Gender"] = gender
-	result["Phone"] = phone
-	result["AdmissionDate"] = admissionDate
-
-	result["totalTests"] = totalTests
-	result["totalMeds"] = totalMeds
-	result["grandTotal"] = grandTotal
-
-	result["AccountNumber"] = "41330117270"
-	result["IFSC"] = "SBIN0011224"
-	result["Bank"] = "STATE BANK OF INDIA"
-	result["QRLink"] = template.URL(url)
-	return result, nil
-}
-
-func GenerateBillingPDF(data map[string]interface{}, htmlPath string, pdfPath string) error {
-	// funcMap := template.FuncMap{
-	//  "add": func(a, b int) int { return a + b },
-	// }
-	tmpl, err := template.ParseFiles("./templates/billings.html")
-	if err != nil {
+		log.Println("Error from getFromContext: ", err)
 		return err
 	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return err
+	tenantIdFromPatientVal, ok := patient["tenantId"]
+	if !ok {
+		log.Println("Unable to fetch tenantId field from patient")
+		return errors.New("Unable to fetch tenantId field from patient")
 	}
-
-	if err := os.WriteFile(htmlPath, buf.Bytes(), 0644); err != nil {
-		return err
+	tenantIdFromPatient, ok := tenantIdFromPatientVal.(string)
+	if !ok {
+		log.Println("Type assertion error for tenantId from patient")
+		return errors.New("Type assertion error for tenantId from patient")
 	}
-
-	cmd := exec.Command(
-		"wkhtmltopdf",
-		"--enable-local-file-access",
-		"--load-error-handling", "ignore",
-		htmlPath,
-		pdfPath,
-	)
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return errors.New(stderr.String())
+	if pharamcistTenantId != tenantIdFromPatient {
+		log.Println("This pharmacist doesnot have access")
+		return errors.New("This pharmacist doesnot have access")
 	}
-
 	return nil
 }
-
-/*
-The Main Function starts here
-*/
-func GenerateBillingReport(c *gin.Context, patientCode string) ([]string, error) {
-	patient, err := FetchPatientByCode(c, patientCode)
-	if err != nil {
-		return nil, err
+func GetLatestAppointmentIDFromPatient(patient map[string]interface{}) (string, error) {
+	rawApp, ok := patient["appointments"]
+	if !ok || rawApp == nil {
+		log.Println("Unable to find key Appointments from patient")
+		return "", errors.New("Unable to find field appointments from patient")
+	}
+	log.Printf("appointments type : %T", rawApp)
+	app, ok := rawApp.([]interface{})
+	if !ok {
+		log.Println("Type assertion failed for appointments field")
+		return "", errors.New("Type assertion failed for appointments field")
 	}
 
-	data, err := BuildBillingData(c, patient)
-	if err != nil {
-		return nil, err
+	if len(app) == 0 {
+		return "", errors.New("no appointments found")
 	}
 
-	name := patient["name"].(string)
-
-	htmlPath := fmt.Sprintf("bill_%s.html", patientCode)
-	pdfPath := fmt.Sprintf("%s_bill.pdf", name)
-
-	err = GenerateBillingPDF(data, htmlPath, pdfPath)
-	if err != nil {
-		return nil, err
+	appointmentId, ok := app[len(app)-1].(string)
+	if !ok {
+		return "", errors.New("invalid appointmentId format")
 	}
-
-	return []string{pdfPath}, nil
+	return appointmentId, nil
 }
-func CreateRazorpayPaymentLink(amount int, name, email, phone string) (string, error) {
-
-	key := "rzp_test_Rp2NNdbZg1oaD3"
-	secret := "gIgHjpFH3Dag1PR97gXyGtOb"
-
-	url := "https://api.razorpay.com/v1/payment_links"
-
-	payload := map[string]interface{}{
-		"amount":      amount * 100,
-		"currency":    "INR",
-		"description": "Hospital Bill Payment",
-		"customer": map[string]interface{}{
-			"name":    name,
-			"email":   email,
-			"contact": phone,
-		},
-		"notify": map[string]bool{
-			"sms":   true,
-			"email": true,
-		},
+func FetchTestsFromMedicalRecord(medicalRecord map[string]interface{}) ([]string, error) {
+	var tests []string
+	rawTests, exists := medicalRecord["testList"]
+	if !exists || rawTests == nil {
+		log.Println("No testList found in medicalRecord")
+		return nil, errors.New("No tests found in medicalRecord")
 	}
+	log.Printf("The type of rawTests: %T ", rawTests)
+	var testList []interface{}
 
-	body, _ := json.Marshal(payload)
-
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
-	req.SetBasicAuth(key, secret)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		return "", err
+	switch v := rawTests.(type) {
+	case []interface{}:
+		testList = v
+	case primitive.A:
+		testList = []interface{}(v)
+	default:
+		return nil, errors.New("unsupported appointments type")
 	}
-	defer res.Body.Close()
-
-	var result map[string]interface{}
-	json.NewDecoder(res.Body).Decode(&result)
-
-	fmt.Println("Razorpay Response:", result)
-
-	if short, ok := result["short_url"].(string); ok {
-		return short, nil
+	for _, t := range testList {
+		val, ok := t.(string)
+		if !ok {
+			log.Println("Unable to fetch test from testList")
+			return nil, errors.New("Unable to fetch test from testList")
+		}
+		tests = append(tests, val)
 	}
-
-	if errMsg, ok := result["error"].(map[string]interface{}); ok {
-		return "", fmt.Errorf("razorpay error: %v", errMsg["description"])
-	}
-
-	return "", errors.New("failed to create payment link")
+	return tests, nil
 }
+func GenerateBillForTests(c *gin.Context, medicalRecord map[string]interface{}) ([]map[string]interface{}, int, error) {
 
-func GenerateQRCode(data string) (string, error) {
-	qrURL := "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + data
-
-	resp, err := http.Get(qrURL)
+	tests, err := FetchTestsFromMedicalRecord(medicalRecord)
 	if err != nil {
+		log.Println("Error from fetchTestsFromMedicalRecord: ", err)
+		return nil, 0, err
+	}
+	log.Println("tests: ", tests)
+	var billTests []map[string]interface{}
+	var incTestPrice int
+	for _, t := range tests {
+		test, err := FetchTestByCode(c, t)
+		if err != nil {
+			log.Println("Error from fetchTestByCode: ", err)
+			return nil, 0, err
+		}
+		billTest := make(map[string]interface{})
+		priceVal, ok := test["price"].(string)
+		if !ok {
+			log.Println("Unable to get price from single test")
+			return nil, 0, errors.New("Unable to get price from single test")
+		}
+		price, _ := strconv.Atoi(priceVal)
+		billTest["testId"] = t
+		billTest["price"] = priceVal
+		incTestPrice = incTestPrice + price
+		billTests = append(billTests, billTest)
+	}
+	return billTests, incTestPrice, nil
+}
+func FetchPrescriptionIdFromMedicalRecord(medicalRecord map[string]interface{}) (string, error) {
+	prescriptionIdVal, ok := medicalRecord["prescriptionId"]
+	if !ok {
+		log.Println("Unable to fetch prescription field from medicalRecord")
+		return "", errors.New("Unable to fetch prescription field from medicalRecord")
+	}
+	prescriptionId, ok := prescriptionIdVal.(string)
+	if !ok {
+		log.Println("Type assertion error for prescription field")
+		return "", errors.New("Type assertion error for prescription field")
+	}
+	return prescriptionId, nil
+}
+func FetchFieldsFromMedicine(c *gin.Context, medicineId string) (int, int, int, error) {
+	var val int
+	medicineFetched, err := FetchMedicineByCode(c, medicineId)
+	if err != nil {
+		log.Println("Error from fetchMedicineByCode: ", err)
+		return val, val, val, err
+	}
+
+	pricePerStripVal, ok := medicineFetched["pricePerStrip"].(string)
+	if !ok {
+		log.Println("Unable to fetch pricePerStrip from medicineFetched")
+		return val, val, val, errors.New("Unable to fetch pricePerStrip from medicineFetched")
+	}
+	pricePerStrip, _ := strconv.Atoi(pricePerStripVal)
+
+	log.Printf("tabletsPerStip %T", medicineFetched["tabletsPerStrip"])
+	tabletsPerStripVal, ok := medicineFetched["tabletsPerStrip"]
+	if !ok {
+		log.Println("unable to fetch tabletsPerStrip")
+		return val, val, val, errors.New("Unable to fetch tabletsPerStrip")
+	}
+	tabletsPerStripInt, ok := tabletsPerStripVal.(string)
+	if !ok {
+		log.Println("Type assertion from tabletsPerStrip")
+		return val, val, val, errors.New("Type assertion from tabletsPerStrip")
+	}
+	tabletsPerStrip, _ := strconv.Atoi(tabletsPerStripInt)
+	log.Println("tabletsPerStrip ", tabletsPerStrip)
+
+	totalNoOfTabletsVal, ok := medicineFetched["totalNoOfTablets"]
+	if !ok {
+		log.Println("unable to fetch totalNoOfTablets")
+		return val, val, val, errors.New("Unable to fetch totalNoOfTablets")
+	}
+	totalNoOfTabletsInt, ok := totalNoOfTabletsVal.(string)
+	if !ok {
+		log.Println("Type assertion from totalNoOfTablets")
+		return val, val, val, errors.New("Type assertion from totalNoOfTablets")
+	}
+	totalNoOfTablets, _ := strconv.Atoi(totalNoOfTabletsInt)
+	log.Println("totalNoOfTablets: ", totalNoOfTablets)
+	return pricePerStrip, tabletsPerStrip, totalNoOfTablets, nil
+}
+func FetchMedicineFieldsFromPrescription(medicine map[string]interface{}) (string, int, error) {
+
+	medicineId, ok := medicine["medicineId"].(string)
+	if !ok {
+		log.Println("Unable to fetch medicineId or type assertion")
+		return "", 0, errors.New("Unable to fetch medicineId")
+	}
+
+	dosagePerFrequencyVal, ok := medicine["dosagePerFrequency"].(string)
+	if !ok {
+		log.Println("Unable to fetch dosagePerFrequency or type assertion")
+		return "", 0, errors.New("Unable to fetch dosagePerFrequency")
+	}
+	dosagePerFrequency, _ := strconv.Atoi(dosagePerFrequencyVal)
+
+	noOfDaysVal, ok := medicine["noOfDays"].(string)
+	if !ok {
+		log.Println("Unable to fetch noOfDays")
+		return "", 0, errors.New("Unable to fetch noOfDays")
+	}
+	noOfDays, _ := strconv.Atoi(noOfDaysVal)
+
+	log.Printf("frequncy type %T", medicine["frequency"])
+	freq := medicine["frequency"].(map[string]interface{})
+	timesPerDay := 0
+	if freq["morning"].(bool) {
+		timesPerDay++
+	}
+	if freq["afternoon"].(bool) {
+		timesPerDay++
+	}
+	if freq["night"].(bool) {
+		timesPerDay++
+	}
+	totalTablets := dosagePerFrequency * timesPerDay * noOfDays
+	return medicineId, totalTablets, nil
+}
+func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface{}) ([]map[string]interface{}, int, error) {
+	prescriptionId, err := FetchPrescriptionIdFromMedicalRecord(medicalRecord)
+	if err != nil {
+		log.Println("Error from fetchPrescriptionFromMedicalRecord: ", err)
+		return nil, 0, err
+	}
+
+	prescription, err := FetchPrescriptionByCode(c, prescriptionId)
+	if err != nil {
+		log.Println("Error from fetchPrescriptionByCode: ", err)
+		return nil, 0, err
+	}
+
+	medicineRaw, ok := prescription["medicines"]
+	if !ok {
+		log.Println("Unable to fetch medicines from medicineRaw: ", err)
+		return nil, 0, errors.New("Unable to fetch medicines from medicineRaw")
+	}
+	var medicines []interface{}
+	switch v := medicineRaw.(type) {
+	case primitive.A:
+		medicines = []interface{}(v)
+	case []interface{}:
+		medicines = v
+	default:
+		return nil, 0, errors.New("Invalid medicines type")
+	}
+
+	var billMedicines []map[string]interface{}
+	var incMedicinePrice int
+	for _, m := range medicines {
+
+		medicine, ok := m.(map[string]interface{})
+		if !ok {
+			log.Println("Unable to fetch medicine from listOfMedicines(prescription)")
+			return nil, 0, errors.New("Unable to fetch medicines from listOfMedicines(prescription)")
+		}
+		log.Println("medicine: ", medicine)
+
+		singleMedicine := make(map[string]interface{})
+		medicineId, totalTablets, err := FetchMedicineFieldsFromPrescription(medicine)
+		if err != nil {
+			log.Println("Error from FetchMedicineFieldsFromPrescription: ", err)
+			return nil, 0, err
+		}
+		log.Println("medicineId: ", medicineId)
+		pricePerStrip, tabletsPerStrip, totalNoOfTablets, err := FetchFieldsFromMedicine(c, medicineId)
+		if err != nil {
+			log.Println("Error from FetchFieldsFromMedicines: ", err)
+			return nil, 0, err
+		}
+		costPerTablet := pricePerStrip / tabletsPerStrip
+		singleMedicine["requiredTablets"] = strconv.Itoa(totalTablets)
+		singleMedicine["medicineId"] = medicineId
+		singleMedicine["costPerTablet"] = strconv.Itoa(costPerTablet)
+		remainingTablets := totalNoOfTablets - totalTablets
+		log.Println("remainingTablets: ", remainingTablets)
+
+		updateMedicine := make(map[string]interface{})
+		if remainingTablets < 0 {
+			singleMedicine["isDispensed"] = false
+			singleMedicine["pricePerMedicine"] = "0"
+			singleMedicine["totalNoOfTablets"] = strconv.Itoa(totalNoOfTablets)
+		} else {
+			singleMedicine["isDispensed"] = true
+			singleMedicine["totalNoOfTablets"] = strconv.Itoa(totalNoOfTablets)
+
+			pricePerMedicineVal := totalTablets * costPerTablet
+			pricePerMedicine := strconv.Itoa(pricePerMedicineVal)
+			singleMedicine["pricePerMedicine"] = pricePerMedicine
+
+			incMedicinePrice = incMedicinePrice + pricePerMedicineVal
+
+			noOfStrips := remainingTablets / tabletsPerStrip
+			updateMedicine["noOfstrips"] = noOfStrips
+			updateMedicine["totalNoOfTablets"] = strconv.Itoa(remainingTablets)
+		}
+		if remainingTablets > 0 {
+			_, err = UpdateMedicines(c, medicineId, updateMedicine)
+			if err != nil {
+				log.Println("Unable to update totalNoOfTablets")
+				return nil, 0, errors.New("Unable to update totalNoOfTablets")
+			}
+		}
+		log.Println("single medicine: ", singleMedicine)
+		billMedicines = append(billMedicines, singleMedicine)
+	}
+	return billMedicines, incMedicinePrice, nil
+}
+func CreateBill(c *gin.Context, patientId string) (string, error) {
+	patient, err := FetchPatientByCode(c, patientId)
+	if err != nil {
+		log.Println("Error from fetchPatientByCode: ", err)
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	qrBytes, err := ioutil.ReadAll(resp.Body)
+	err = CheckForAccess(c, patient)
 	if err != nil {
+		log.Println("Error from CheckForAccess: ", err)
 		return "", err
 	}
 
-	base64QR := base64.StdEncoding.EncodeToString(qrBytes)
-
-	return "data:image/png;base64," + base64QR, nil
+	latestApp, err := GetLatestAppointmentIDFromPatient(patient)
+	if err != nil {
+		log.Println("Error from getLatestAppointmentIDFromPatient: ", err)
+		return "", err
+	}
+	log.Println("latestAppId: ", latestApp)
+	appointment, err := FetchAppointmentByCode(c, latestApp)
+	if err != nil {
+		log.Println("Error from fetchAppointmentByCode: ", err)
+		return "", err
+	}
+	medicalIdVal, exists := appointment["medicalId"]
+	if !exists {
+		log.Println("Unable to fetch medicalId from appointment")
+		return "", errors.New("Unable to fetch medicalId from appointment")
+	}
+	medicalId, ok := medicalIdVal.(string)
+	if !ok {
+		log.Println("Type assertion error for medicalId from appointment")
+		return "", errors.New("Type assertion error for medicalId from appointment")
+	}
+	medicalRecord, err := FetchMedicalRecordByCode(c, medicalId)
+	if err != nil {
+		log.Println("Error from fetchMedicalRecordByCode: ", err)
+		return "", err
+	}
+	// tests, err := FetchTestsFromMedicalRecord(medicalRecord)
+	// if err != nil {
+	// 	log.Println("Error from fetchTestsFromMedicalRecord: ", err)
+	// 	return "", err
+	// }
+	// log.Println("tests: ", tests)
+	// var billTests []map[string]interface{}
+	// var incTestPrice int
+	// for _, t := range tests {
+	// 	test, err := FetchTestByCode(c, t)
+	// 	if err != nil {
+	// 		log.Println("Error from fetchTestByCode: ", err)
+	// 		return "", err
+	// 	}
+	// 	billTest := make(map[string]interface{})
+	// 	priceVal, ok := test["price"].(string)
+	// 	if !ok {
+	// 		log.Println("Unable to get price from single test")
+	// 		return "", errors.New("Unable to get price from single test")
+	// 	}
+	// 	price, _ := strconv.Atoi(priceVal)
+	// 	billTest["testId"] = t
+	// 	billTest["price"] = priceVal
+	// 	incTestPrice = incTestPrice + price
+	// 	billTests = append(billTests, billTest)
+	// }
+	billTests, incTestPrice, err := GenerateBillForTests(c, medicalRecord)
+	if err != nil {
+		log.Println("Error from generateBillForTests: ", err)
+		return "", err
+	}
+	billMedicines, incMedicinePrice, err := GenerateBillForMedicines(c, medicalRecord)
+	if err != nil {
+		log.Println("Error from generateBillFromMedicines: ", err)
+		return "", err
+	}
+	bill := bson.M{}
+	bill["medicines"] = billMedicines
+	bill["tests"] = billTests
+	bill["amountForTests"] = strconv.Itoa(incTestPrice)
+	bill["amountForMedicine"] = strconv.Itoa(incMedicinePrice)
+	bill["amount"] = strconv.Itoa(incMedicinePrice + incTestPrice)
+	code, err := GenerateEmpCode(BillCollection)
+	if err != nil {
+		log.Println("Error from generateEmpCode: ", err)
+		return "", err
+	}
+	bill["code"] = code
+	pharmacistId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from GetFromContext: ", err)
+		return "", err
+	}
+	bill["createdBy"] = pharmacistId
+	bill["updatedBy"] = pharmacistId
+	bill["createdAt"] = time.Now()
+	bill["updatedAt"] = time.Now()
+	collection := db.OpenCollections(BillCollection)
+	inserted, err := db.CreateOne(c, collection, bill)
+	if err != nil {
+		log.Println("Error from createOne: ", err)
+		return "", err
+	}
+	log.Println("inserted: ", inserted.InsertedID)
+	key := util.BillKey + code
+	err = redis.SetCache(c, key, bill)
+	if err != nil {
+		log.Println("Error while setting cache")
+	}
+	return "created successfully", nil
 }

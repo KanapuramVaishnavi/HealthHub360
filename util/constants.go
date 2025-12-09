@@ -16,4 +16,5 @@ const (
 	PrescriptionKey  string = "PRESCRIPTION#"
 	TestKey          string = "TEST#"
 	TestReportKey    string = "TEST_REPORT#"
+	BillKey          string = "BILL#"
 )

@@ -12,11 +12,11 @@ import (
 func Medicines(router *gin.Engine) {
 	medicines := router.Group("/medicines")
 	{
-		medicines.POST("/create", authorization.Authorize("medicines", "create"), CreateMedicines)
-		medicines.GET("/fetch/:medicineCode", authorization.Authorize("medicines", "view"), FetchMedicineByCode)
-		medicines.GET("/fetchAll", authorization.Authorize("medicines", "view"), FetchAllMedicines)
-		medicines.PATCH("/update/:medicineCode", authorization.Authorize("medicines", "update"), UpdateMedicines)
-		medicines.DELETE("/delete/:medicineCode", authorization.Authorize("medicines", "delete"), DeleteMedicine)
+		medicines.POST("/create", authorization.Authorize("medicine", "create"), CreateMedicines)
+		medicines.GET("/fetch/:medicineCode", authorization.Authorize("medicine", "view"), FetchMedicineByCode)
+		medicines.GET("/fetchAll", authorization.Authorize("medicine", "view"), FetchAllMedicines)
+		medicines.PATCH("/update/:medicineCode", authorization.Authorize("medicine", "update"), UpdateMedicines)
+		medicines.DELETE("/delete/:medicineCode", authorization.Authorize("medicine", "delete"), DeleteMedicine)
 	}
 }
 func CreateMedicines(c *gin.Context) {
