@@ -50,11 +50,12 @@ func UpdateNurse(c *gin.Context) {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	if err := services.UpdateNurse(c, data, code); err != nil {
+	msg, err := services.UpdateNurse(c, data, code)
+	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	c.JSON(200, util.SuccessResponse("updated successfully"))
+	c.JSON(200, util.SuccessResponse(msg))
 }
 
 /*

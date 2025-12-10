@@ -109,28 +109,6 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	}
 	return "Successfully created", nil
 }
-func fetchMedicineFromDB(c *gin.Context, medicineId string, key string,
-	collFromContext string, userData map[string]interface{},
-	tenantId, code string, isSuperAdmin bool) (map[string]interface{}, error) {
-
-	coll := db.OpenCollections(medicineCollection)
-
-	result := make(map[string]interface{})
-	filter := bson.M{"code": medicineId}
-
-	err := db.FindOne(c, coll, filter, result)
-	if err != nil {
-		return nil, errors.New("record not found")
-	}
-
-	if err := canAccess(collFromContext, userData, result, tenantId, code, isSuperAdmin); err != nil {
-		return nil, err
-	}
-
-	_ = redis.SetCache(c, key, result)
-
-	return result, nil
-}
 func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
 
 	key := util.MedicinesKey + medicineId
@@ -147,14 +125,29 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(
-		c, key, collFromContext, userData, tenantId, code, isSuperAdmin,
-	); exists {
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
 
-	return fetchMedicineFromDB(c, medicineId, key,
-		collFromContext, userData, tenantId, code, isSuperAdmin)
+	coll := db.OpenCollections(medicineCollection)
+	filter := bson.M{"code": medicineId}
+	result := make(map[string]interface{})
+
+	err = db.FindOne(c, coll, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
+	}
+
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, err
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
+	}
+
+	return result, nil
 }
 
 func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {

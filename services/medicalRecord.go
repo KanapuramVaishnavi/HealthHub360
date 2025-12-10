@@ -5,7 +5,6 @@ import (
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
 	"errors"
-	"fmt"
 	"log"
 	"time"
 
@@ -16,61 +15,40 @@ import (
 func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[string]interface{}, error) {
 	key := util.MedicalRecordKey + medicalRecordId
 
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	collFromContext := c.GetString("collection")
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+
+	collectionFromContext := db.OpenCollections(collFromContext)
+	userData := make(map[string]interface{})
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
 	if err != nil {
-		log.Println("Error from getTenantIdFromToken ", err)
+		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	log.Println("tenantId from token: ", tenantId)
 
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-
-	if err == nil && exists {
-		log.Println("From cache: ", cached)
-		tenantIdCache, ok := cached["tenantId"].(string)
-		if !ok {
-			fmt.Println("createdBy not found or invalid")
-			return nil, errors.New("Unable to get the CreatedBy field from cache")
-		}
-		if tenantIdCache != tenantId {
-			log.Println("Error from the tenant which is tenant doesnot have access")
-			return nil, errors.New("This tenant does not have access")
-		}
-		return cached, nil
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+		return cached, err
 	}
-
-	collection := db.OpenCollections(medicalRecordCollection)
-	filter := bson.M{
-		"code": medicalRecordId,
-	}
+	coll := db.OpenCollections(medicalRecordCollection)
+	filter := bson.M{"code": medicalRecordId}
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, result)
-	log.Println("From db: ", result)
+
+	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function: ", err)
+		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	tenantCollVal, ok := result["tenantId"]
-	if !ok {
-		log.Println("Unable to get tenantId from result")
-		return nil, errors.New("Unable to get tenantId from result")
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, err
 	}
-	tenantIdFromColl, ok := tenantCollVal.(string)
-	if !ok {
 
-		log.Println("Type assertion tenantId(string) from result")
-		return nil, errors.New("Type assertion tenantId(string) from result")
-	}
-	if tenantIdFromColl != tenantId {
-		log.Println("This tenant does not have access to fetch")
-		return nil, errors.New("This tenant does not have access to fetch")
-	}
 	err = redis.SetCache(c, key, result)
 	if err != nil {
-		log.Println("Error from SetCache: ", err)
-		return nil, err
+		log.Println("Error from setCache: ", err)
 	}
+
 	return result, nil
 }
 

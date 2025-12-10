@@ -656,3 +656,46 @@ func HasAccess(isSuperAdmin bool, cxtCollection string, tenantId string, code st
 
 	return nil
 }
+
+func canAccess(userData, record map[string]interface{}, tenantId string, code string, collFromContext string, isSuperAdmin bool) error {
+	log.Println("record: ", record)
+
+	if isSuperAdmin {
+		return nil
+	}
+
+	if collFromContext == TenantCollection {
+		if record["tenantId"].(string) != tenantId {
+			return errors.New("tenant does not have access")
+		}
+		return nil
+	}
+
+	if collFromContext == hospitalCollection {
+		if record["hospitalId"].(string) != code {
+			return errors.New("hospital admin does not have access")
+		}
+		return nil
+	}
+
+	if userData["createdBy"].(string) != record["hospitalId"].(string) {
+		return errors.New("user does not have access")
+	}
+
+	return nil
+}
+
+func checkCacheAccess(c *gin.Context, key string, collFromContext string, userData map[string]interface{}, tenantId, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err != nil || !exists {
+		return nil, false, nil
+	}
+
+	if err := canAccess(userData, cached, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, true, err
+	}
+
+	return cached, true, nil
+}

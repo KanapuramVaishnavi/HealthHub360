@@ -499,68 +499,6 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 	return "created Successfully", nil
 }
 
-func canAccess(collFromContext string, userData, record map[string]interface{}, tenantId string, code string, isSuperAdmin bool) error {
-	log.Println("record: ", record)
-
-	if isSuperAdmin {
-		return nil
-	}
-
-	if collFromContext == TenantCollection {
-		if record["tenantId"].(string) != tenantId {
-			return errors.New("tenant does not have access")
-		}
-		return nil
-	}
-
-	if collFromContext == hospitalCollection {
-		if record["hospitalId"].(string) != code {
-			return errors.New("hospital admin does not have access")
-		}
-		return nil
-	}
-
-	if userData["createdBy"].(string) != record["hospitalId"].(string) {
-		return errors.New("user does not have access")
-	}
-
-	return nil
-}
-func checkCacheAccess(c *gin.Context, key string, collFromContext string, userData map[string]interface{}, tenantId, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
-
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-	if err != nil || !exists {
-		return nil, false, nil
-	}
-
-	if err := canAccess(collFromContext, userData, cached, tenantId, code, isSuperAdmin); err != nil {
-		return nil, true, err
-	}
-
-	return cached, true, nil
-}
-func fetchFromDB(c *gin.Context, appointmentId string, key string, collFromContext string, userData map[string]interface{}, tenantId, code string, isSuperAdmin bool) (map[string]interface{}, error) {
-
-	coll := db.OpenCollections(appointmentCollection)
-
-	result := make(map[string]interface{})
-	filter := bson.M{"code": appointmentId}
-
-	err := db.FindOne(c, coll, filter, result)
-	if err != nil {
-		return nil, errors.New("record not found")
-	}
-
-	if err := canAccess(collFromContext, userData, result, tenantId, code, isSuperAdmin); err != nil {
-		return nil, err
-	}
-
-	_ = redis.SetCache(c, key, result)
-
-	return result, nil
-}
-
 /*
 * Get appointmentId from the services
 * Get tenantId,code,collection,isSuperAdmin from the context
@@ -583,13 +521,29 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(
-		c, key, collFromContext, userData, tenantId, code, isSuperAdmin,
-	); exists {
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
+	coll := db.OpenCollections(appointmentCollection)
+	filter := bson.M{"code": appointmentId}
+	result := make(map[string]interface{})
 
-	return fetchFromDB(c, appointmentId, key, collFromContext, userData, tenantId, code, isSuperAdmin)
+	err = db.FindOne(c, coll, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, errors.New("record not found")
+	}
+
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, err
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
+	}
+
+	return result, nil
+
 }
 
 // func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {

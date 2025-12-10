@@ -168,52 +168,52 @@ func FetchAllPharmacist(c *gin.Context, tenantId string) ([]interface{}, error) 
 * Get the code from claims which is createdBy field
 * Update based on the update and search filters
  */
-func UpdatePharmacist(c *gin.Context, data map[string]interface{}, code string) error {
+func UpdatePharmacist(c *gin.Context, data map[string]interface{}, pharmacistId string) (string, error) {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
 		if err := trimIfExists(data, f); err != nil {
-			log.Println("Error from ")
-			return err
+			log.Println("Error from trimIfExists: ", err)
+			return "", err
 		}
 	}
 	if err := handleDOB(data); err != nil {
-		return err
+		return "", err
 	}
 
-	createdBy, ok := c.Get("code")
-	if !ok {
-		return errors.New("unable to fetch code from context")
-	}
-	updateFilter := BuildUpdateFilter(data, createdBy.(string))
+	code := c.GetString("code")
+	updateFilter := BuildUpdateFilter(data, code)
 	filter := bson.M{
-		"createdBy": code,
+		"code": pharmacistId,
 	}
 	collection := db.OpenCollections(pharmacistCollection)
-	value := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, value)
+	pharmacist := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, &pharmacist)
 	if err != nil {
 		log.Println("Error from the findOne function", err)
-		return err
+		return "", err
 	}
-	log.Println(value)
-	val := value["createdBy"].(string)
+	log.Println(pharmacist)
+	val := pharmacist["createdBy"].(string)
 	log.Println(val)
-	log.Println(createdBy)
-	if val != createdBy {
-		log.Println("This Pharmacist does not have access to update")
-		return errors.New("This Pharmacist doesnot have access")
+	if code != val {
+		log.Println("This hospitalAdmin does not have access to update")
+		return "", errors.New("This hospitalAdmin doesnot have access")
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
 		log.Println("Error from updateOne:", err)
-		return err
+		return "", err
 	}
 
-	log.Println(res.UpsertedCount)
+	log.Println(res.ModifiedCount)
 
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, result)
-	key := util.PharamacistKey + code
+	err = db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	key := util.PharamacistKey + pharmacistId
 	if err := redis.DeleteCache(c, key); err != nil {
 		log.Println("Failed deleting old pharmacist cache:", err)
 	}
@@ -222,7 +222,7 @@ func UpdatePharmacist(c *gin.Context, data map[string]interface{}, code string) 
 		log.Println("Failed caching updated pharmacist:", err)
 	}
 
-	return nil
+	return "Updated Successfully", nil
 }
 
 /*
