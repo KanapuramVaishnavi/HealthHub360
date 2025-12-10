@@ -127,9 +127,9 @@ func handleDOB(data map[string]interface{}) error {
 * Include all fields provided and extra field to modify into the input data provided
 * Make it as update filter
  */
-func BuildUpdateFilter(data map[string]interface{}, createdBy string) map[string]interface{} {
+func BuildUpdateFilter(data map[string]interface{}, code string) map[string]interface{} {
 	// data["createdBy"] = createdBy
-	data["updatedBy"] = createdBy
+	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
 	updateFilter := bson.M{"$set": data}
 	return updateFilter

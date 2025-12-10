@@ -408,57 +408,6 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 	}
 	return "created successfully", nil
 }
-func CanAccessForBill(userData map[string]interface{}, record map[string]interface{}, collFromContext, tenantId, code string, isSuperAdmin bool) error {
-	log.Println("record: ", record)
-	if isSuperAdmin {
-		return nil
-	}
-	if collFromContext == pharmacistCollection {
-		if record["createdBy"].(string) != code {
-			log.Println("This pharmacist doesnot have access")
-			return errors.New("This pharmacist doesnot have access")
-		}
-	}
-	if collFromContext == patientCollection {
-		if record["patientId"].(string) != code {
-			log.Println("This patient doesnot have access")
-			return errors.New("This patient doesnot have access")
-		}
-	}
-	return nil
-}
-func FetchBillFromCache(c *gin.Context, key string, collFromContext string, userData map[string]interface{}, tenantId string, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
-
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-	if err != nil || !exists {
-		return nil, false, nil
-	}
-	if err := CanAccessForBill(userData, cached, collFromContext, tenantId, code, isSuperAdmin); err != nil {
-		return nil, true, err
-	}
-	return cached, true, err
-}
-func FetchBillFromDB(c *gin.Context, billId string, key string, collFromContext string, userData map[string]interface{}, tenantId string, code string, isSuperAdmin bool) (map[string]interface{}, error) {
-	coll := BillCollection
-	collection := db.OpenCollections(coll)
-	result := make(map[string]interface{})
-	filter := bson.M{
-		"code": billId,
-	}
-	err := db.FindOne(c, collection, filter, &result)
-	if err != nil {
-		log.Println("Error from findOne: ", err)
-		return nil, err
-	}
-	log.Println("filter: ", filter)
-	log.Println("result: ", result)
-	if err := CanAccessForBill(userData, result, collFromContext, tenantId, code, isSuperAdmin); err != nil {
-		log.Println("Error from canAccessForBill: ", err)
-		return nil, err
-	}
-	return result, nil
-}
 func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, error) {
 	tenantId := c.GetString("tenantId")
 	code := c.GetString("code")
@@ -472,15 +421,29 @@ func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, err
 		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
+
 	key := util.BillKey + billId
-	if cached, exists, err := FetchBillFromCache(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	result, err := FetchBillFromDB(c, billId, key, collFromContext, userData, tenantId, code, isSuperAdmin)
+	coll := db.OpenCollections(BillCollection)
+	filter := bson.M{"code": billId}
+	result := make(map[string]interface{})
+
+	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("error from fetchBillFromDB: ", err)
+		log.Println("Error from findOne: ", err)
+		return nil, errors.New("record not found")
+	}
+
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
+	}
+
 	return result, nil
 }
 

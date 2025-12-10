@@ -81,6 +81,11 @@ func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{},
 		log.Println("Error from getFromContext: ", err)
 		return nil, err
 	}
+	collFromContext := c.GetString("collection")
+	if collFromContext != SuperAdminCollection {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
+	}
 	coll := TenantCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{

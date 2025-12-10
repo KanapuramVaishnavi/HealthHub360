@@ -41,17 +41,18 @@ func CreateDoctor(c *gin.Context) {
 * Pass to the service
  */
 func UpdateDoctor(c *gin.Context) {
-	code := c.Param("code")
+	doctorId := c.Param("code")
 	var data map[string]interface{}
 	if err := c.BindJSON(&data); err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	if err := services.UpdateDoctor(c, data, code); err != nil {
+	msg, err := services.UpdateDoctor(c, data, doctorId)
+	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	c.JSON(200, util.SuccessResponse("updated successfully"))
+	c.JSON(200, util.SuccessResponse(msg))
 }
 
 /*

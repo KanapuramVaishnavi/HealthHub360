@@ -15,6 +15,7 @@ func Receptionist(router *gin.Engine) {
 		recep.POST("/create", authorization.Authorize("receptionist", "create"), CreateReceptionist)
 		recep.GET("/fetch/:code", authorization.Authorize("receptionist", "view"), FetchReceptionistByCode)
 		recep.GET("/fetchAll/:tenantid", authorization.Authorize("receptionist", "view"), FetchAllReceptionist)
+		recep.PATCH("/update/:code", authorization.Authorize("receptionist", "update"), UpdateReceptionist)
 	}
 }
 
@@ -51,4 +52,19 @@ func FetchAllReceptionist(c *gin.Context) {
 		return
 	}
 	c.JSON(200, util.SuccessResponse(doc))
+}
+
+func UpdateReceptionist(c *gin.Context) {
+	receptionistId := c.Param("code")
+	var data map[string]interface{}
+	if err := c.BindJSON(&data); err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	msg, err := services.UpdateReceptionist(c, data, receptionistId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(msg))
 }

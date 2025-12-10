@@ -67,16 +67,6 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 				return "", err
 			}
 		}
-
-		// intFields := []string{"dosagePerFrequency", "noOfDays"}
-		// for _, field := range intFields {
-		// 	floatValue, ok := medicine[field].(float64)
-		// 	if !ok {
-		// 		return "", errors.New("integer field invalid: " + field)
-		// 	}
-		// 	medicine[field] = int(floatValue)
-		// }
-
 		frequency, ok := medicine["frequency"].(map[string]interface{})
 		if !ok {
 			return "", errors.New("frequency must be an object")
@@ -143,48 +133,40 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 
 func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]interface{}, error) {
 
-	// collFromContext, err := GetFromContext[string](c, "collection")
-	// if err != nil {
-	// 	log.Println("Error from getFromContext: ", err)
-	// 	return nil, err
-	// }
-	tenantId, err := GetFromContext[string](c, "tenantId")
-	if err != nil {
-		log.Println("Error from getFromContext: ", err)
-		return nil, err
-	}
-	coll := prescriptionCollection
-	collection := db.OpenCollections(coll)
 	key := util.PrescriptionKey + prescriptionId
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-	if err == nil && exists {
-		return cached, nil
-	}
-	log.Println("Error from getCache: ", err)
-	filter := bson.M{
-		"code": prescriptionId,
-	}
-	log.Println("filter: ", filter)
-	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, &result)
+
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	collFromContext := c.GetString("collection")
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+
+	collectionFromContext := db.OpenCollections(collFromContext)
+	userData := make(map[string]interface{})
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
 	if err != nil {
 		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	preTenantIdVal, ok := result["tenantId"]
-	if !ok {
-		log.Println("tenantId field not present in prescription")
-		return nil, errors.New("tenantId field not present in prescription")
+
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+		return cached, err
 	}
-	preTenantId, ok := preTenantIdVal.(string)
-	if !ok {
-		log.Println("tenantId field in prescription not in string type")
-		return nil, errors.New("tenantId field in prescription not in string type")
+	coll := db.OpenCollections(prescriptionCollection)
+	filter := bson.M{"code": prescriptionId}
+	result := make(map[string]interface{})
+
+	err = db.FindOne(c, coll, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, errors.New("record not found")
 	}
-	if tenantId != preTenantId {
-		log.Println("User doesnot have access")
-		return nil, errors.New("User doesnot have access")
+
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, err
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
 	}
 
 	return result, nil
