@@ -14,7 +14,7 @@ func Role(router *gin.Engine) {
 	role := router.Group("/role")
 	{
 		role.POST("create", authorization.Authorize("role", "create"), CreateRole)
-		role.POST("/fetchAll", authorization.Authorize("role", "view"), ReadRoles)
+		role.GET("/fetchAll", authorization.Authorize("role", "view"), ReadRoles)
 		role.POST("/update/:roleCode", authorization.Authorize("role", "update"), UpdateRole)
 		role.GET("/fetch/:roleCode", authorization.Authorize("role", "view"), FetchRoleById)
 		role.DELETE("/delete/:roleCode", authorization.Authorize("role", "delete"), DeleteRole)
