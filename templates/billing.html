@@ -1,96 +1,71 @@
+
+ 
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Patient & Hospital Report</title>
+<title>Hospital Bill</title>
  
 <style>
     body {
         font-family: Arial, sans-serif;
         padding: 30px;
-        line-height: 1.6;
+        line-height: 1.5;
     }
  
-    /* BLUE HEADER WITH LOGO + NAME */
-    /* BLUE HEADER WITH LOGO + NAME */
-.header-bar {
-    width: 100%;
-    height: 150px;
-    background: #0f5fa8;
-    margin-bottom: 30px;
+    .header-bar {
+        width: 100%;
+        height: 150px;
+        background: #0f5fa8;
+        margin-bottom: 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 40px;
+    }
  
-    display: flex;
-    justify-content: space-between;  /* LOGO LEFT, BARCODE RIGHT */
-    align-items: center;
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 40px;
+    }
  
-    padding: 0 40px; /* space left and right */
-}
+    .hospital-logo {
+        width: 95px;
+        height: 95px;
+        object-fit: contain;
+        background: white;
+        border-radius: 10px;
+        border: 2px solid #ffffff;
+    }
  
-/* Left container for Logo + text */
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 40px;  /* space between logo and text */
-}
+    .hospital-info {
+        color: white;
+        line-height: 1.3;
+    }
  
-/* Logo styling */
-.hospital-logo {
-    width: 95px;
-    height: 95px;
-    object-fit: contain;
-    background-color: white;
-    border-radius: 10px;
-    border: 2px solid #ffffff;
-}
- 
-/* Text container */
-.hospital-info {
-    color: white;
-    line-height: 1.4;
-}
- 
-/* Hospital name */
-.hospital-info .hospital-name {
-    font-size: 28px;
-    font-weight: bold;
-}
- 
-/* Address + contact */
-.hospital-info div {
-    font-size: 16px;
-}
- 
-/* BARCODE — PERFECT FIT */
-.barcode {
-    width: 150px;
-    height: 70px;
-    object-fit: contain;
-    
-    border-radius: 6px;
-    padding: 0;  /* ensures no white space */
-}
- 
-    
- 
-    .hospital-name {
-        color: #ffffff;
-        font-size: 30px;
+    .hospital-info .hospital-name {
+        font-size: 28px;
         font-weight: bold;
-        text-transform: uppercase;
-        letter-spacing: 1px;
+    }
+ 
+    .barcode {
+        width: 150px;
+        height: 70px;
+        object-fit: contain;
     }
  
     h1 {
         text-align: center;
-        font-size: 24px;
         color: #0f5fa8;
+        font-size: 24px;
     }
  
     h2 {
-        font-size: 18px;
         color: #0f5fa8;
         margin-top: 25px;
         margin-bottom: 10px;
+        font-size: 20px;
     }
  
     table {
@@ -98,39 +73,34 @@
         border-collapse: collapse;
         margin-top: 8px;
         margin-bottom: 20px;
-        table-layout: fixed;
+    }
+ 
+    th, td {
+        border: 1px solid black;
+        padding: 10px;
+        font-size: 14px;
     }
  
     th {
-        border: 1px solid #000000;
-        padding: 10px;
-        font-size: 14px;
-        text-align: left;
-        background-color: #ffffff;
+        background: #f2f2f2;
         font-weight: bold;
     }
  
-    td {
-        border: 1px solid #000000;
-        padding: 10px;
-        font-size: 14px;
-        vertical-align: top;
-    }
- 
-    hr {
-        margin: 40px 0;
-        border: 0;
-        border-top: 2px solid #0f5fa8;
+    .payment-box {
+        width: 50%;
+        padding: 15px;
+        border: 1px solid black;
+        background: #f9f9f9;
+        border-radius: 6px;
     }
 </style>
 </head>
  
 <body>
  
-<!-- ========================= -->
-<!--   LOGO + NAME IN BLUE BAR -->
-<!-- ========================= -->
-<!-- ========== HEADER BAR ========== -->
+<!-- ============================= -->
+<!-- HEADER BAR -->
+<!-- ============================= -->
 <div class="header-bar">
  
     <!-- LEFT: Logo + Hospital Info -->
@@ -149,141 +119,104 @@
  
 </div>
  
+<h1>Hospital Billing Summary</h1>
  
- 
- 
-<h1>Patient &amp; Hospital Report</h1>
- 
-<p>This document contains structured hospital and patient information using static and
-dynamic placeholder text for integration into automated systems.</p>
- 
-<h2>Introduction</h2>
-<p>This medical report template is designed for hospital systems to automatically populate
-patient data, doctor details, diagnosis information, treatment plans, and follow-up
-instructions. It uses dynamic placeholders so any backend service can replace them with
-actual values during PDF/DOCX generation.</p>
- 
-<h2>Dynamic Overview</h2>
-<p>
-Patient <strong>{{.PatientName}}</strong>, aged <strong>{{.Age}}</strong>, was admitted to
-<strong>{{.HospitalName}}</strong> on <strong>{{.AdmissionDate}}</strong>. The primary consulting doctor for this case is
-<strong>{{.PrimaryDoctorName}}</strong> from the {{.PrimaryDoctorDepartment}} department.
-The patient reported Symptoms. After evaluation, the diagnosis was identified and further tests were conducted to confirm the assessment.
-</p>
- 
-<!-- ========================= -->
-<!--      HOSPITAL INFO        -->
-<!-- ========================= -->
- 
-<h2>Hospital Information</h2>
-<table>
-    <tr><th>Registration ID</th><td>{{.HospitalRegID}}</td></tr>
-    <tr><th>Hospital Name</th><td>{{.HospitalName}}</td></tr>
-    <tr><th>Address</th><td>{{.HospitalAddress}}</td></tr>
-    <tr><th>Contact</th><td>{{.HospitalContact}}</td></tr>
-</table>
- 
-<!-- ========================= -->
-<!--      PATIENT INFO         -->
-<!-- ========================= -->
+<!-- ============================= -->
+<!-- PATIENT INFORMATION -->
+<!-- ============================= -->
  
 <h2>Patient Information</h2>
-<table>
-     <tr><th>Patient ID</th><td>{{.PatientID}}</td></tr>
-     <tr><th>Patient Name</th><td>{{.PatientName}}</td></tr>
-     <tr><th>Age</th><td>{{.Age}}</td></tr>
-     <tr><th>Gender</th><td>{{.Gender}}</td></tr>
-     <tr><th>Admission Date</th><td>{{.AdmissionDate}}</td></tr>
-</table>
- 
-<!-- ========================= -->
-<!--      DOCTORS TABLE        -->
-<!-- ========================= -->
- 
-<h2>Doctors</h2>
-<table>
-    <tr>
-        <th>S.No</th>
-        <th>Doctor ID</th>
-        <th>Doctor Name</th>
-        <th>Department</th>
-    </tr>
-    {{range $i, $d := .Doctors}}
-    <tr>
-        <td>{{add $i 1}}</td>
-        <td>{{$d.DoctorID}}</td>
-        <td>{{$d.DoctorName}}</td>
-        <td>{{$d.Department}}</td>
-    </tr>
-    {{end}}
-</table>
- 
-<!-- ========================= -->
-<!--   APPOINTMENTS TABLE      -->
-<!-- ========================= -->
- 
-<h2>Appointments</h2>
-<table>
-    <tr>
-        <th>AppointmentID</th>
-        <th>Appointment Date</th>
-        <th>Reason</th>
-    </tr>
-    {{range $i, $a := .AppointmentsTable}}
-    <tr>
-        <td>{{$a.AppointmentID}}</td>
-        <td>{{$a.AppointmentDate}}</td>
-        <td>{{$a.Reason}}</td>
-    </tr>
-    {{end}}
-</table>
- 
-<!-- ========================= -->
-<!--   MEDICAL RECORDS TABLE   -->
-<!-- ========================= -->
- 
-<h2>Medical Details</h2>
-<p>During the <strong>Medical evaluation</strong>, the following conditions were reviewed:</p>
  
 <table>
     <tr>
-        <th>S.No</th>
-        <th>Appointment ID</th>
-        <th>Prescription</th>
+        <th>Patient Name</th><td>{{.PatientName}}</td>
+        <th>Patient ID</th><td>{{.PatientID}}</td>
     </tr>
-    {{range $i, $m := .MedicalRecordsTable}}
     <tr>
-        <td>{{add $i 1}}</td>
-        <td>{{$m.AppointmentID}}</td>
-        <td>
-            {{range $j, $med := $m.Medications}}
-            <div style="margin-bottom:12px; line-height:1.4;">
-                <strong>Medicine:</strong> {{$med.medicineName}} <br>
-                <strong>Dosage:</strong> {{$med.dosagePerFrequency}} <br>
-                <strong>Time:</strong>
-                {{if $med.morning}} Morning {{end}}
-                {{if $med.afternoon}} Afternoon {{end}}
-                {{if $med.night}} Night {{end}} <br>
- 
-                <strong>Instructions:</strong> {{$med.instructions}} <br>
-                <strong>No. of Days:</strong> {{$med.noOfDays}}
-            </div>
-            <hr style="border:1px dashed #000;">
-            {{end}}
-        </td>
+        <th>Age</th><td>{{.Age}}</td>
+        <th>Gender</th><td>{{.Gender}}</td>
     </tr>
-    {{end}}
+    <tr>
+        <th>Phone</th><td>{{.Phone}}</td>
+        <th>Admission Date</th><td>{{.AdmissionDate}}</td>
+    </tr>
 </table>
  
-<h2>Additional Details</h2>
-<p>
-Further recommendations include lifestyle adjustments such as &lt;LifestyleChanges&gt;. The
-patient has been advised to monitor &lt;MonitorParameters&gt; and report any critical
-symptoms immediately.
-</p>
+<!-- ============================= -->
+<!-- BILL ITEMS -->
+<!-- ============================= -->
  
-<hr>
+<h2>Bill Summary</h2>
+ 
+<table>
+    <tr>
+        
+        <th>Description</th>
+        <th>Amount (₹)</th>
+    </tr>
+ 
+    <tr>
+        
+        <td>Test Charges</td>
+        <td>₹ {{.totalTests}}</td>
+    </tr>
+ 
+    <tr>
+        <td>Medication Charges</td>
+        <td>₹ {{.totalMeds}}</td>
+    </tr>
+ 
+    <tr>
+        <th colspan="1" style="text-align:right">Grand Total</th>
+        <th>₹ {{.grandTotal}}</th>
+    </tr>
+</table>
+ 
+<!-- ============================= -->
+<!-- PAYMENT SECTION -->
+<!-- ============================= -->
+ 
+<h2>Payment Method</h2>
+ 
+<div class="payment-box"
+     style="width:100%; display:flex; justify-content:space-between; gap:30px; align-items:flex-start;">
+ 
+    <!-- LEFT SECTION: TWO QR CODES -->
+    <div style="flex:1; display:flex; flex-direction:column; gap:20px;">
+ 
+        <!-- QR 1: UPI (PhonePe / Paytm / GPay) -->
+        <div style="text-align:center;">
+            <p><strong>Scan to Pay (UPI — PhonePe / GPay / Paytm)</strong></p>
+ 
+            <img src="{{.DynamicQRLink}}"
+                 style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
+            <p><strong style="color:#54595F;">UPI ID:</strong> 9876543210@okaxis</p>
+            <p><strong style="color:#54595F;">Amount:</strong> ₹ {{.grandTotal}}</p>
+        </div>
+ 
+        <!-- QR 2: Razorpay -->
+        <div style="text-align:center;">
+            <p><strong>Scan to Pay Using Cards( Credit & Debit ),Wallets & NetBanking </strong></p>
+ 
+            <img src="{{.QRLink}}"
+                 style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
+        </div>
+    </div>
+ 
+    <!-- RIGHT SECTION: BANK DETAILS -->
+    <div style="flex:1; font-size:15px;">
+        <p><strong>Bank Transfer</strong></p>
+        <p><strong style="color:#444A50;">Account Number:</strong> {{.AccountNumber}}</p>
+        <p><strong style="color:#54595F;">IFSC:</strong> {{.IFSC}}</p>
+        <p><strong style="color:#54595F;">Bank:</strong> {{.Bank}}</p>
+    </div>
+ 
+</div>
+ 
+ 
+ 
  
 </body>
 </html>
+ 
  

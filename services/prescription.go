@@ -12,28 +12,28 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) error {
+func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) (map[string]interface{}, error) {
 
 	medicalRecord, err := FetchMedicalRecordByCode(c, medicalRecordId)
 	if err != nil {
 		log.Println("Error from fetchMedicalRecordByCode: ", err)
-		return err
+		return nil, err
 	}
 	doctorIdVal, exists := medicalRecord["doctorId"]
 	if !exists {
 		log.Println("doctorId doesnot exists in medicalRecord")
-		return errors.New("doctorId doesnot exists in medicalRecord")
+		return nil, errors.New("doctorId doesnot exists in medicalRecord")
 	}
 	doctorIdFromMedicalRecord, ok := doctorIdVal.(string)
 	if !ok {
 		log.Println("Type assertion error while fetching doctorId from medicalRecord")
-		return errors.New("Type assertion error while fetching doctorId from medicalRecord")
+		return nil, errors.New("Type assertion error while fetching doctorId from medicalRecord")
 	}
 	if doctorId != doctorIdFromMedicalRecord {
 		log.Println("User doesnot have access")
-		return errors.New("User doesnot have access")
+		return nil, errors.New("User doesnot have access")
 	}
-	return nil
+	return medicalRecord, nil
 }
 func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalRecordId string) (string, error) {
 
@@ -43,7 +43,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		return "", err
 	}
 
-	err = VerifyHasAccess(c, doctorId, medicalRecordId)
+	medicalRecord, err := VerifyHasAccess(c, doctorId, medicalRecordId)
 	if err != nil {
 		log.Println("Error from VerifyHasAccess: ", err)
 		return "", err
@@ -124,7 +124,15 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		log.Println("Error from updateMedicalRecord: ", err)
 		return "", err
 	}
+	updAppointment := bson.M{
+		"isProcessing": false,
+	}
 
+	_, err = UpdateAppointment(c, medicalRecord["appointmentId"].(string), updAppointment)
+	if err != nil {
+		log.Println("Update(isProcessing) field for the latestAppointment: ", err)
+		return "", err
+	}
 	key := util.PrescriptionKey + prescriptionCode
 	err = redis.SetCache(c, key, data)
 	if err != nil {

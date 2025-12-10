@@ -204,6 +204,78 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	}
 	return nil
 }
+func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
+	codeVal, ok := c.Get("code")
+	if !ok {
+		log.Println("Error while fetching  from context. ")
+		return errors.New("Error while fetching  from context")
+	}
+	code, ok := codeVal.(string)
+	if !ok {
+		log.Println("Error for type assertion error to get collection. ")
+		return errors.New("Error while type assertion to get collection")
+	}
+	pharmacist, err := FetchPharmacistByCode(c, code)
+	if err != nil {
+		log.Println("Error from fetchPharmacistByCode: ", err)
+		return err
+	}
+	doctorIdFromPharmacist := pharmacist["createdBy"].(string)
+	data["updatedBy"] = code
+	data["updatedAt"] = time.Now()
+	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	mFilter := bson.M{
+		"code": medicalRecordId,
+	}
+	medicalRecord := make(map[string]interface{})
+	err = db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
+	if err != nil {
+		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		return err
+	}
+	hospitalIdVal, ok := medicalRecord["hospitalId"]
+	if !ok {
+		log.Println("Error while checking the value is present in it or not")
+		return errors.New("Error while checking the the hospitalId exists")
+	}
+	hospitalId, ok := hospitalIdVal.(string)
+	if !ok {
+		log.Println("Error during type assertion error(hospitalId)")
+		return errors.New("Error type assertion error for doctorId")
+	}
+	if hospitalId != doctorIdFromPharmacist {
+		log.Println("This pharmacist doesnot have access to update the record")
+		return errors.New("This pharmacist doesnot have access to update the record")
+	}
+	collection := db.OpenCollections(medicalRecordCollection)
+	filter := bson.M{
+		"code": medicalRecordId,
+	}
+	update := bson.M{
+		"$set": data,
+	}
+	updated, err := db.UpdateOne(c, collection, filter, update)
+	if err != nil {
+		log.Println("Error while updating medicalRecord by doctor:", err)
+		return err
+	}
+	log.Println("Updated: ", updated.ModifiedCount)
+	updatedRecord := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, updatedRecord)
+	if err != nil {
+		log.Println("Error from findOne after updating", err)
+		return err
+	}
+	key := util.MedicalRecordKey + medicalRecordId
+	if err := redis.DeleteCache(c, key); err != nil {
+		log.Println("Failed deleting old medicalRecord cache:", err)
+	}
+
+	if err := redis.SetCache(c, key, updatedRecord); err != nil {
+		log.Println("Failed caching updated medicalRecord:", err)
+	}
+	return nil
+}
 
 // func UpdateMedicalRecordByReceptionist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 
@@ -268,6 +340,12 @@ func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string
 			return "", err
 		}
 		log.Println("Updated by doctor")
+		return msg, nil
+	case pharmacistCollection:
+		if err := UpdateMedicalRecordByPharmacist(c, medicalRecordId, data); err != nil {
+			return "", err
+		}
+		log.Println("Updated by pharmacist")
 		return msg, nil
 	// case receptionistCollection:
 	// 	if err := UpdateMedicalRecordByReceptionist(c, medicalRecordId, data); err != nil {

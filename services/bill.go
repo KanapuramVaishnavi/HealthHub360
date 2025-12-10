@@ -4,8 +4,18 @@ import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"html/template"
+	"io/ioutil"
 	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
 	"strconv"
 	"time"
 
@@ -43,12 +53,15 @@ func GetLatestAppointmentIDFromPatient(patient map[string]interface{}) (string, 
 		return "", errors.New("Unable to find field appointments from patient")
 	}
 	log.Printf("appointments type : %T", rawApp)
-	app, ok := rawApp.([]interface{})
-	if !ok {
-		log.Println("Type assertion failed for appointments field")
-		return "", errors.New("Type assertion failed for appointments field")
+	var app []interface{}
+	switch v := rawApp.(type) {
+	case primitive.A:
+		app = []interface{}(v)
+	case []interface{}:
+		app = v
+	default:
+		return "", errors.New("unsupported appointments type")
 	}
-
 	if len(app) == 0 {
 		return "", errors.New("no appointments found")
 	}
@@ -284,7 +297,7 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 			incMedicinePrice = incMedicinePrice + pricePerMedicineVal
 
 			noOfStrips := remainingTablets / tabletsPerStrip
-			updateMedicine["noOfstrips"] = noOfStrips
+			updateMedicine["noOfstrips"] = strconv.Itoa(noOfStrips)
 			updateMedicine["totalNoOfTablets"] = strconv.Itoa(remainingTablets)
 		}
 		if remainingTablets > 0 {
@@ -337,32 +350,6 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 		log.Println("Error from fetchMedicalRecordByCode: ", err)
 		return "", err
 	}
-	// tests, err := FetchTestsFromMedicalRecord(medicalRecord)
-	// if err != nil {
-	// 	log.Println("Error from fetchTestsFromMedicalRecord: ", err)
-	// 	return "", err
-	// }
-	// log.Println("tests: ", tests)
-	// var billTests []map[string]interface{}
-	// var incTestPrice int
-	// for _, t := range tests {
-	// 	test, err := FetchTestByCode(c, t)
-	// 	if err != nil {
-	// 		log.Println("Error from fetchTestByCode: ", err)
-	// 		return "", err
-	// 	}
-	// 	billTest := make(map[string]interface{})
-	// 	priceVal, ok := test["price"].(string)
-	// 	if !ok {
-	// 		log.Println("Unable to get price from single test")
-	// 		return "", errors.New("Unable to get price from single test")
-	// 	}
-	// 	price, _ := strconv.Atoi(priceVal)
-	// 	billTest["testId"] = t
-	// 	billTest["price"] = priceVal
-	// 	incTestPrice = incTestPrice + price
-	// 	billTests = append(billTests, billTest)
-	// }
 	billTests, incTestPrice, err := GenerateBillForTests(c, medicalRecord)
 	if err != nil {
 		log.Println("Error from generateBillForTests: ", err)
@@ -385,11 +372,24 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 		return "", err
 	}
 	bill["code"] = code
+	updMedicalRecord := make(map[string]interface{})
+	updMedicalRecord["billId"] = code
+	_, err = UpdateMedicalRecord(c, medicalId, updMedicalRecord)
+	if err != nil {
+		log.Println("Error from updateMedicalRecord: ", err)
+		return "", err
+	}
+
 	pharmacistId, err := GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from GetFromContext: ", err)
 		return "", err
 	}
+	bill["tenantId"] = medicalRecord["tenantId"].(string)
+	bill["hospitalId"] = medicalRecord["hospitalId"].(string)
+	bill["prescripitonId"] = medicalRecord["prescriptionId"].(string)
+	bill["medicalId"] = medicalId
+	bill["patientId"] = patientId
 	bill["createdBy"] = pharmacistId
 	bill["updatedBy"] = pharmacistId
 	bill["createdAt"] = time.Now()
@@ -407,4 +407,324 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 		log.Println("Error while setting cache")
 	}
 	return "created successfully", nil
+}
+func CanAccessForBill(userData map[string]interface{}, record map[string]interface{}, collFromContext, tenantId, code string, isSuperAdmin bool) error {
+	log.Println("record: ", record)
+	if isSuperAdmin {
+		return nil
+	}
+	if collFromContext == pharmacistCollection {
+		if record["createdBy"].(string) != code {
+			log.Println("This pharmacist doesnot have access")
+			return errors.New("This pharmacist doesnot have access")
+		}
+	}
+	if collFromContext == patientCollection {
+		if record["patientId"].(string) != code {
+			log.Println("This patient doesnot have access")
+			return errors.New("This patient doesnot have access")
+		}
+	}
+	return nil
+}
+func FetchBillFromCache(c *gin.Context, key string, collFromContext string, userData map[string]interface{}, tenantId string, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err != nil || !exists {
+		return nil, false, nil
+	}
+	if err := CanAccessForBill(userData, cached, collFromContext, tenantId, code, isSuperAdmin); err != nil {
+		return nil, true, err
+	}
+	return cached, true, err
+}
+func FetchBillFromDB(c *gin.Context, billId string, key string, collFromContext string, userData map[string]interface{}, tenantId string, code string, isSuperAdmin bool) (map[string]interface{}, error) {
+	coll := BillCollection
+	collection := db.OpenCollections(coll)
+	result := make(map[string]interface{})
+	filter := bson.M{
+		"code": billId,
+	}
+	err := db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
+	}
+	log.Println("filter: ", filter)
+	log.Println("result: ", result)
+	if err := CanAccessForBill(userData, result, collFromContext, tenantId, code, isSuperAdmin); err != nil {
+		log.Println("Error from canAccessForBill: ", err)
+		return nil, err
+	}
+	return result, nil
+}
+func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, error) {
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	collFromContext := c.GetString("collection")
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+
+	collectionFromContext := db.OpenCollections(collFromContext)
+	userData := make(map[string]interface{})
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return nil, err
+	}
+	key := util.BillKey + billId
+	if cached, exists, err := FetchBillFromCache(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+		return cached, err
+	}
+	result, err := FetchBillFromDB(c, billId, key, collFromContext, userData, tenantId, code, isSuperAdmin)
+	if err != nil {
+		log.Println("error from fetchBillFromDB: ", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+func BuildBillingData(c *gin.Context, patient map[string]interface{}) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	patientName := patient["name"].(string)
+	patientID := patient["code"].(string)
+	patientemail := patient["email"].(string)
+	age := toInt(patient["age"])
+	gender := patient["gender"].(string)
+	admissionDate := getString(patient["admissionDate"])
+	phone := getString(patient["phoneNo"])
+
+	rawIDs, ok := patient["appointments"].([]interface{})
+	if !ok || len(rawIDs) == 0 {
+		return nil, errors.New("no appointment IDs found")
+	}
+
+	appointmentID := rawIDs[len(rawIDs)-1].(string)
+	appointment, err := FetchAppointmentByCode(c, appointmentID)
+	if err != nil {
+		return nil, err
+	}
+	//   appointment["isPr"]
+
+	hospital, err := FetchHospitalByCode(c, appointment["hospitalId"].(string))
+	if err != nil {
+		return nil, err
+	}
+	//medicalRecordFetching
+
+	medicalRecord, err := FetchMedicalRecordByCode(c, appointment["medicalId"].(string))
+	if err != nil {
+		return nil, err
+	}
+	billingRecord, err := FetchBillByCode(c, medicalRecord["billId"].(string))
+	if err != nil {
+		return nil, err
+	}
+	totalTestsVal := billingRecord["amountForTests"]
+	totalmedicineBillVal := billingRecord["amountForMedicine"]
+
+	totaltestbill, err := strconv.Atoi(totalTestsVal.(string))
+	if err != nil {
+		return nil, err
+	}
+
+	totalmedbill, err := strconv.Atoi(totalmedicineBillVal.(string))
+	if err != nil {
+		return nil, err
+	}
+
+	grandTotal := totaltestbill + totalmedbill
+
+	logo, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/smalllogo.jpg")
+	qr, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/qrcode.png")
+	upiId := "paytmqr5r0hgo@ptys"
+	name := "Kadambala Aditya"
+	upistring := BuildUPIString(upiId, name, grandTotal)
+
+	qrCode, _ := GenerateQRCode(upistring)
+
+	link, err := CreateRazorpayPaymentLink(grandTotal, patientName, patientemail, phone)
+	if err != nil {
+		return nil, err
+	}
+	url, err := GenerateQRCode(link)
+	if err != nil {
+		return nil, err
+	}
+	result["HospitalLogo"] = template.URL(logo)
+	result["Barcode"] = template.URL(qr)
+
+	result["HospitalName"] = hospital["name"]
+	result["HospitalAddress"] = hospital["address"]
+	result["HospitalContact"] = hospital["phoneNo"]
+
+	result["PatientName"] = patientName
+	result["PatientID"] = patientID
+	result["Age"] = age
+	result["Gender"] = gender
+	result["Phone"] = phone
+	result["AdmissionDate"] = admissionDate
+
+	result["totalTests"] = totaltestbill
+	result["totalMeds"] = totalmedbill
+	result["grandTotal"] = grandTotal
+
+	result["AccountNumber"] = "41330117270"
+	result["IFSC"] = "SBIN0011224"
+	result["Bank"] = "STATE BANK OF INDIA"
+	result["QRLink"] = template.URL(url)
+	result["DynamicQRLink"] = template.URL(qrCode)
+	return result, nil
+}
+
+func GenerateBillingPDF(data map[string]interface{}, htmlPath string, pdfPath string) error {
+	tmpl, err := template.ParseFiles("./templates/billings.html")
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return err
+	}
+
+	if err := os.WriteFile(htmlPath, buf.Bytes(), 0644); err != nil {
+		return err
+	}
+
+	cmd := exec.Command(
+		"wkhtmltopdf",
+		"--enable-local-file-access",
+		"--load-error-handling", "ignore",
+		htmlPath,
+		pdfPath,
+	)
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return errors.New(stderr.String())
+	}
+
+	return nil
+}
+
+/*
+The Main Function starts here
+*/
+func GenerateBillingReport(c *gin.Context, patientCode string) ([]string, error) {
+	patient, err := FetchPatientByCode(c, patientCode)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := BuildBillingData(c, patient)
+	if err != nil {
+		return nil, err
+	}
+
+	name := patient["name"].(string)
+
+	htmlPath := fmt.Sprintf("bill_%s.html", patientCode)
+	pdfPath := fmt.Sprintf("%s_bill.pdf", name)
+
+	err = GenerateBillingPDF(data, htmlPath, pdfPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{pdfPath}, nil
+}
+func CreateRazorpayPaymentLink(amount int, name, email, phone string) (string, error) {
+
+	// Razorpay Test Credentials (replace with your LIVE keys in production)
+	key := "rzp_test_Rp2NNdbZg1oaD3"
+	secret := "gIgHjpFH3Dag1PR97gXyGtOb"
+
+	url := "https://api.razorpay.com/v1/payment_links"
+
+	payload := map[string]interface{}{
+		"amount":      amount * 100, // Razorpay expects paise
+		"currency":    "INR",
+		"description": fmt.Sprintf("Hospital Bill Payment for %s", name),
+
+		"customer": map[string]interface{}{
+			"name":    name,
+			"email":   email,
+			"contact": phone,
+		},
+
+		"notify": map[string]bool{
+			"sms":   true,
+			"email": true,
+		},
+
+		"reminder_enable": true,
+		"callback_method": "get",
+	}
+
+	// Convert payload to JSON
+	body, _ := json.Marshal(payload)
+
+	// Create request
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req.SetBasicAuth(key, secret)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Perform request
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	// Read response
+	var result map[string]interface{}
+	json.NewDecoder(res.Body).Decode(&result)
+
+	fmt.Println("Razorpay Response:", result)
+
+	// Extract short_url
+	if link, ok := result["short_url"].(string); ok {
+		return link, nil
+	}
+
+	// Razorpay error message
+	if errObj, ok := result["error"].(map[string]interface{}); ok {
+		return "", fmt.Errorf("razorpay error: %v", errObj["description"])
+	}
+
+	return "", errors.New("unknown razorpay error, no short_url returned")
+}
+
+func GenerateQRCode(data string) (string, error) {
+	qrURL := "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + data
+
+	resp, err := http.Get(qrURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	qrBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	base64QR := base64.StdEncoding.EncodeToString(qrBytes)
+
+	return "data:image/png;base64," + base64QR, nil
+}
+func BuildUPIString(upiID, name string, amount int) string {
+	encodedName := url.QueryEscape(name)
+
+	return fmt.Sprintf(
+		"upi://pay?pa=%s&pn=%s&am=%d&cu=INR&tn=Hospital+Bill",
+		upiID,
+		encodedName,
+		amount,
+	)
 }

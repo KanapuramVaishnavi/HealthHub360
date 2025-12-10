@@ -279,15 +279,11 @@ func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId s
 		return "", err
 	}
 	coll := medicalRecordCollection
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(coll)
 	key := util.MedicalRecordKey + medicalCode
 	err = redis.SetCache(c, key, medicalDoc)
 	if err != nil {
 		log.Println("Error while caching new medicalRecord : ", err)
-	}
-	if _, err := SaveUserToDB(coll, data); err != nil {
-		log.Println("Error from the saveUserToDB:", err)
-		return "", err
 	}
 	_, err = db.CreateOne(ctx, collection, medicalDoc)
 	if err != nil {
@@ -351,7 +347,6 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 			log.Println("Unable to fetch appointments")
 			return errors.New("Unable to fetch appointments")
 		}
-		var appointments []string
 		for _, a := range val {
 			if str, ok := a.(string); ok {
 				appointments = append(appointments, str)
@@ -360,7 +355,23 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 			}
 		}
 	}
-
+	if len(appointments) > 0 {
+		latestAppointmentsId := appointments[len(appointments)-1]
+		appointment, err := FetchAppointmentByCode(c, latestAppointmentsId)
+		if err != nil {
+			log.Println("Error from fetchAppointmentByCode: ", appointment)
+			return errors.New("Error from fetchAppointmentByCode")
+		}
+		isProcessing, ok := appointment["isProcessing"].(bool)
+		if !ok {
+			log.Println("isProcessing field unable to fetch from appointment")
+			return errors.New("isProcessing field unable to fetch from latestAppointment")
+		}
+		if isProcessing {
+			log.Println("Latestappointment is still processing,cannot create one more appointment")
+			return errors.New("LatestAppointment is still processing,cannot create one more appointment")
+		}
+	}
 	appointments = append(appointments, appCode)
 	patientUpdate := bson.M{
 		"$set": bson.M{
@@ -449,7 +460,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 
 	timeGiven := data["time"].(string)
 	if err := checkAndBookSlot(c, slotColl, doc, timeGiven, data["patientId"].(string)); err != nil {
-		log.Println("Error fron checAndBookSlot: ", err)
+		log.Println("Error fron checkAndBookSlot: ", err)
 		return "", err
 	}
 	data["code"] = appCode
@@ -515,8 +526,7 @@ func canAccess(collFromContext string, userData, record map[string]interface{}, 
 
 	return nil
 }
-func checkCacheAccess(c *gin.Context, key string, collFromContext string, userData map[string]interface{},
-	tenantId, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
+func checkCacheAccess(c *gin.Context, key string, collFromContext string, userData map[string]interface{}, tenantId, code string, isSuperAdmin bool) (map[string]interface{}, bool, error) {
 
 	cached := make(map[string]interface{})
 	exists, err := redis.GetCache(c, key, &cached)
@@ -763,6 +773,8 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		return "", errors.New("Error while type assertion to get collection")
 	}
 	data["updatedBy"] = code
+
+	collFromContext := c.GetString("collection")
 	data["updatedAt"] = time.Now()
 	appColl := db.OpenCollections(appointmentCollection)
 	Filter := bson.M{
@@ -774,19 +786,37 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		log.Println("Error while fetching medicalRecord(FindOne)", err)
 		return "", err
 	}
-	receptionistVal, ok := appointment["createdBy"]
-	if !ok {
-		log.Println("Error while checking the value is present in it or not")
-		return "", errors.New("Error while checking the the doctorId exists")
+	if collFromContext == receptionistCollection {
+		receptionistVal, ok := appointment["createdBy"]
+		if !ok {
+			log.Println("Error while checking the value is present in it or not")
+			return "", errors.New("Error while checking the the doctorId exists")
+		}
+		receptionist, ok := receptionistVal.(string)
+		if !ok {
+			log.Println("Error during type assertion error")
+			return "", errors.New("Error type assertion error for doctorId")
+		}
+		if receptionist != code {
+			log.Println("This receptionist doesnot have access to update the appointment")
+			return "", errors.New("This receptionist doesnot have access to update the appointment")
+		}
 	}
-	receptionist, ok := receptionistVal.(string)
-	if !ok {
-		log.Println("Error during type assertion error")
-		return "", errors.New("Error type assertion error for doctorId")
-	}
-	if receptionist != code {
-		log.Println("This receptionist doesnot have access to update the appointment")
-		return "", errors.New("This receptionist doesnot have access to update the appointment")
+	if collFromContext == doctorCollection {
+		doctor, err := FetchDoctorByCode(c, code)
+		if err != nil {
+			log.Println("Error from fetchPharmacistByCode: ", err)
+			return "", err
+		}
+		hospitalIdFromApp, ok := appointment["hospitalId"].(string)
+		if !ok {
+			log.Println("Unable to get hospitalId from appointment")
+			return "", errors.New("Unable to get hospitalId from appointment")
+		}
+		if hospitalIdFromApp != doctor["createdBy"].(string) {
+			log.Println("This pharmacist doesnot have access to update appointment")
+			return "", errors.New("This pharmacist doesnot have access ")
+		}
 	}
 	collection := db.OpenCollections(appointmentCollection)
 	filter := bson.M{
