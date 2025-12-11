@@ -499,8 +499,8 @@ func BuildBillingData(c *gin.Context, patient map[string]interface{}) (map[strin
 
 	grandTotal := totaltestbill + totalmedbill
 
-	logo, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/smalllogo.jpg")
-	qr, _ := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/qrcode.png")
+	logo, _ := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/smalllogo.jpg")
+	qr, _ := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/qrcode.png")
 	upiId := "paytmqr5r0hgo@ptys"
 	name := "Kadambala Aditya"
 	upistring := BuildUPIString(upiId, name, grandTotal)
@@ -542,7 +542,7 @@ func BuildBillingData(c *gin.Context, patient map[string]interface{}) (map[strin
 }
 
 func GenerateBillingPDF(data map[string]interface{}, htmlPath string, pdfPath string) error {
-	tmpl, err := template.ParseFiles("./templates/billings.html")
+	tmpl, err := template.ParseFiles("./templates/billing.html")
 	if err != nil {
 		return err
 	}

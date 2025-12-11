@@ -31,13 +31,13 @@ func HospitalCreate(c *gin.Context) {
 	c.JSON(200, util.SuccessResponse("created successfully"))
 }
 func UpdateHospital(c *gin.Context) {
-	code := c.Param("code")
+	hospitalId := c.Param("code")
 	var data map[string]interface{}
 	if err := c.BindJSON(&data); err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	if err := services.UpdateHospital(c, data, code); err != nil {
+	if err := services.UpdateHospital(c, data, hospitalId); err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}

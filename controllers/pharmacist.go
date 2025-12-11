@@ -14,7 +14,7 @@ func Pharmacist(router *gin.Engine) {
 	{
 		pharma.POST("/create", authorization.Authorize("pharmacist", "create"), CreatePharmacist)
 		pharma.GET("/fetch/:code", authorization.Authorize("pharmacist", "view"), FetchPharmacistByCode)
-		pharma.GET("/fetchAll/:tenantid", authorization.Authorize("pharmacist", "view"), FetchAllPharmacist)
+		pharma.GET("/fetchAll", authorization.Authorize("pharmacist", "view"), FetchAllPharmacist)
 		pharma.PATCH("/update/:code", authorization.Authorize("pharmacist", "update"), UpdatePharmacist)
 	}
 }
@@ -45,8 +45,7 @@ func FetchPharmacistByCode(c *gin.Context) {
 }
 
 func FetchAllPharmacist(c *gin.Context) {
-	tenantId := c.Param("tenantId")
-	doc, err := services.FetchAllPharmacist(c, tenantId)
+	doc, err := services.FetchAllPharmacist(c)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

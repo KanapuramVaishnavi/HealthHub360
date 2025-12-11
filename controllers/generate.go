@@ -1,14 +1,13 @@
 package controllers
 
 import (
-	"HealthHub360/config/authorization"
 	"HealthHub360/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 func Report(router *gin.Engine) {
-	report := router.Group("/report", authorization.JWTAuth())
+	report := router.Group("/report")
 	report.GET("/fetch/:code", GenerateReport)
 }
 func GenerateReport(c *gin.Context) {

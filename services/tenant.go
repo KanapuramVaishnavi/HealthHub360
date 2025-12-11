@@ -144,21 +144,25 @@ func UpdateTenantByCode(c *gin.Context, code string, updateData map[string]inter
 
 	_, err := fetchExistingTenant(code)
 	if err != nil {
+		log.Println("Error from fetchExistingTenant: ", err)
 		return "", err
 	}
 
 	updateFields, err := parseTenantUpdateFields(c, updateData)
 	if err != nil {
+		log.Println("Error from parseTenantUpdateFields: ", err)
 		return "", err
 	}
 
 	err = updateTenantInDB(code, updateFields)
 	if err != nil {
+		log.Println("Error from updateTenantInDB: ", err)
 		return "", err
 	}
 
 	updatedTenant, err := fetchExistingTenant(code)
 	if err != nil {
+		log.Println("Error from fetchExistingTenant: ", err)
 		return "", err
 	}
 	key := util.TenantKey + code
@@ -237,11 +241,11 @@ func updateTenantInDB(code string, update bson.M) error {
 	collection := db.OpenCollections(TenantCollection)
 	filter := bson.M{"code": code}
 
-	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
+	res, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
 	if err != nil {
 		return fmt.Errorf("update failed: %v", err)
 	}
-
+	log.Println(res.ModifiedCount)
 	return nil
 }
 

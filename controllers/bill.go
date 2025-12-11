@@ -13,7 +13,7 @@ func Bill(router *gin.Engine) {
 	bill := router.Group("/bill")
 	bill.POST("/create/:code", authorization.Authorize("bill", "create"), CreateBill)
 	bill.GET("/fetch/:code", authorization.Authorize("bill", "view"), FetchBillByCode)
-	bill.POST("/generate/:patientId", GenerateBillingReport)
+	bill.GET("/generate/:patientId", GenerateBillingReport)
 }
 func CreateBill(c *gin.Context) {
 	patientId := c.Param("code")

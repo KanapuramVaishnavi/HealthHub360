@@ -335,3 +335,54 @@ func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string
 		return "", errors.New("Unauthorized role")
 	}
 }
+
+func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
+
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if ctxCollection == TenantCollection {
+		filter = bson.M{
+			"tenantId": code,
+		}
+	} else if ctxCollection == hospitalCollection {
+		filter = bson.M{
+			"hospitalId": code,
+		}
+	} else if ctxCollection == receptionistCollection {
+		collection := db.OpenCollections(receptionistCollection)
+		receptionist := make(map[string]interface{})
+		err := db.FindOne(c, collection, bson.M{"code": code}, receptionist)
+		if err != nil {
+			log.Println("Error from findOne: ", err)
+			return nil, err
+		}
+		filter = bson.M{
+			"hospitalId": receptionist["createdBy"].(string),
+		}
+	} else if ctxCollection == doctorCollection {
+		filter = bson.M{
+			"doctorId": code,
+		}
+	} else if ctxCollection == nurseCollection {
+		filter = bson.M{
+			"nurseId": code,
+		}
+	} else {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
+	}
+	collection := db.OpenCollections(medicalRecordCollection)
+	doc, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from FindAll", err)
+		return nil, err
+	}
+	return doc, nil
+}

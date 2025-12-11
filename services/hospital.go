@@ -140,36 +140,35 @@ func BuildUpdateFilter(data map[string]interface{}, code string) map[string]inte
 * Get the code from claims which is createdBy field
 * Update based on the update and search filters
  */
-func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) error {
+func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId string) error {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
 		if err := trimIfExists(data, f); err != nil {
-			log.Println("Error from trimIfExists")
+			log.Println("Error from trimIfExists: ", err)
 			return err
 		}
 	}
 	if err := handleDOB(data); err != nil {
+		log.Println("Error from handlDOB: ", err)
 		return err
 	}
 
-	createdBy, ok := c.Get("code")
-	if !ok {
-		return errors.New("unable to fetch code from context")
-	}
-	updateFilter := BuildUpdateFilter(data, createdBy.(string))
+	tenantId := c.GetString("code")
+	updateFilter := BuildUpdateFilter(data, tenantId)
 	filter := bson.M{
-		"code": code,
+		"code": hospitalId,
 	}
 	collection := db.OpenCollections(hospitalCollection)
 	value := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, value)
+	err := db.FindOne(c, collection, filter, &value)
 	if err != nil {
 		log.Println("Error from the findOne function", err)
 		return err
 	}
 	log.Println(value)
 	val := value["createdBy"].(string)
-	if val != createdBy {
+	if val != tenantId {
+		log.Println("This tenant doesnot have access")
 		return errors.New("This tenant doesnot have access")
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
@@ -178,7 +177,7 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 		return err
 	}
 
-	log.Println(res.UpsertedCount)
+	log.Println(res.ModifiedCount)
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
@@ -186,7 +185,7 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 		log.Println("Error from findOne: ", err)
 		return err
 	}
-	key := util.HospitalKey + code
+	key := util.HospitalKey + hospitalId
 	if err := redis.DeleteCache(c, key); err != nil {
 		log.Println("Failed deleting old tenant cache:", err)
 	}
@@ -203,10 +202,10 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, code string) er
 * Get code from params
 * Fetch from db
  */
-func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, error) {
+func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interface{}, error) {
 	coll := hospitalCollection
 
-	key := util.HospitalKey + code
+	key := util.HospitalKey + hospitalId
 	log.Println("Cache key: ", key)
 	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
 	if err != nil {
@@ -226,18 +225,19 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 	if !ok {
 		fmt.Println("createdBy not found or invalid")
 	}
-	if !isSuperAdmin {
-		if tenantIdCache != tenantId {
-			log.Println("Error from the tenant which is tenant doesnot have access")
-		}
-	}
 	if err == nil && exists {
+		if !isSuperAdmin {
+			if tenantIdCache != tenantId {
+				log.Println("Error from the tenant which is tenant doesnot have access")
+				return nil, errors.New("Tenant doesnot have access")
+			}
+		}
 		log.Println("From cache")
 		return cached, nil
 	}
 	result := make(map[string]interface{})
 	filter := bson.M{
-		"code": code,
+		"code": hospitalId,
 	}
 	collection := db.OpenCollections(coll)
 	log.Println("Filter: ", filter)
@@ -257,7 +257,6 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 	err = redis.SetCache(c, key, result)
 	if err != nil {
 		log.Println("Error from the setCache:", err)
-		return nil, err
 	}
 
 	return result, nil
@@ -265,12 +264,22 @@ func FetchHospitalByCode(c *gin.Context, code string) (map[string]interface{}, e
 
 func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 	collection := db.OpenCollections(hospitalCollection)
-	tenantCode, ok := c.Get("code")
-	if !ok {
-		return nil, errors.New("unable to fetch code from context")
-	}
-	filter := bson.M{
-		"createdBy": tenantCode,
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if !isSuperAdmin && ctxCollection == TenantCollection {
+		filter = bson.M{
+			"createdBy": code,
+		}
+	} else {
+		log.Println("Invalid user to access ")
+		return nil, errors.New("Invalida user to access")
 	}
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
