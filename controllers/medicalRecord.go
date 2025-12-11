@@ -11,7 +11,8 @@ import (
 func MedicalRecord(c *gin.Engine) {
 	medicalRecord := c.Group("medicalRecord")
 	{
-		medicalRecord.GET("/get/:medicalRecordId", authorization.Authorize("medicalRecord", "view"), FetchMedicalRecordByCode)
+		medicalRecord.GET("/fetch/:medicalRecordId", authorization.Authorize("medicalRecord", "view"), FetchMedicalRecordByCode)
+		medicalRecord.GET("/fetchAll", authorization.Authorize("medicalRecord", "view"), FetchAllMedicalRecords)
 		medicalRecord.PATCH("/update/:medicalRecordId", authorization.Authorize("medicalRecord", "update"), UpdateMedicalRecord)
 	}
 }
@@ -19,6 +20,14 @@ func MedicalRecord(c *gin.Engine) {
 func FetchMedicalRecordByCode(c *gin.Context) {
 	medicalRecordId := c.Param("medicalRecordId")
 	medicalRecord, err := services.FetchMedicalRecordByCode(c, medicalRecordId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(medicalRecord))
+}
+func FetchAllMedicalRecords(c *gin.Context) {
+	medicalRecord, err := services.FetchAllMedicalRecords(c)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

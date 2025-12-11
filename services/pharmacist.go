@@ -152,9 +152,30 @@ func FetchPharmacistByCode(c *gin.Context, pharmacistId string) (map[string]inte
 /*
 It gives the all the pharmacist on the database
 */
-func FetchAllPharmacist(c *gin.Context, tenantId string) ([]interface{}, error) {
+func FetchAllPharmacist(c *gin.Context) ([]interface{}, error) {
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
+
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if ctxCollection == TenantCollection {
+		filter = bson.M{
+			"tenantId": code,
+		}
+	} else if ctxCollection == hospitalCollection {
+		filter = bson.M{
+			"createdBy": code,
+		}
+	} else {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
+	}
 	collection := db.OpenCollections(pharmacistCollection)
-	filter := bson.M{"tenantId": tenantId}
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -218,7 +239,7 @@ func UpdatePharmacist(c *gin.Context, data map[string]interface{}, pharmacistId 
 		log.Println("Failed deleting old pharmacist cache:", err)
 	}
 
-	if err := redis.SetCache(c, key, data); err != nil {
+	if err := redis.SetCache(c, key, result); err != nil {
 		log.Println("Failed caching updated pharmacist:", err)
 	}
 

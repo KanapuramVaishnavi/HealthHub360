@@ -9,8 +9,10 @@ import (
 	"html/template"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -151,7 +153,7 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 		if err != nil {
 			return nil, fmt.Errorf("failed fetching medical record for appointment %s", app["appointmentId"])
 		}
-		//log.Println(medical)
+		log.Println("medical: ", medical)
 		prescriptionId := getString(medical["prescriptionId"])
 		pres := make(map[string]interface{})
 		if prescriptionId == "" {
@@ -164,6 +166,7 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 				log.Println("FetchPrescriptionByCode error:", err)
 			}
 		}
+		log.Println("Hi1")
 
 		originalPrescription, err := BuildPrescriptionData(c, pres)
 		if err != nil {
@@ -174,11 +177,11 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 			"Medications":   originalPrescription,
 		})
 	}
-	logoBase64, err := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/smalllogo.jpg")
+	logoBase64, err := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/smalllogo.jpg")
 	if err != nil {
 		log.Println("Image load error:", err)
 	}
-	qrcodeImage, err := ImageToBase64("/home/adityakadambala/Desktop/hh360/HealthHub360/images/qrcode.png")
+	qrcodeImage, err := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/qrcode.png")
 	if err != nil {
 		log.Println("Image load error:", err)
 	}
@@ -308,7 +311,7 @@ func GenerateReport(c *gin.Context, code string) ([]string, error) {
 	if err != nil {
 		return []string{}, err
 	}
-
+	log.Println("Hi")
 	raw, ok := patient["appointments"]
 	if !ok {
 		return []string{}, errors.New("appointments field missing")
@@ -345,11 +348,46 @@ func GenerateReport(c *gin.Context, code string) ([]string, error) {
 
 	return generatedPDFs, nil
 }
+
+//	func ImageToBase64(path string) (string, error) {
+//		data, err := ioutil.ReadFile(path)
+//		if err != nil {
+//			return "", err
+//		}
+//		encoded := base64.StdEncoding.EncodeToString(data)
+//		return "data:image/jpeg;base64," + encoded, nil
+//	}
 func ImageToBase64(path string) (string, error) {
+
+	// Check if it's a URL
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+
+		// Download from URL
+		resp, err := http.Get(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to fetch image from URL: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			return "", fmt.Errorf("non-200 response fetching image: %v", resp.Status)
+		}
+
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("failed reading image bytes: %v", err)
+		}
+
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return "data:image/jpeg;base64," + encoded, nil
+	}
+
+	// Otherwise treat as local file path
 	data, err := ioutil.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
+
 	encoded := base64.StdEncoding.EncodeToString(data)
 	return "data:image/jpeg;base64," + encoded, nil
 }

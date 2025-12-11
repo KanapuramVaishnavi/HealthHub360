@@ -151,28 +151,55 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 }
 
 func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
-	pharmacistId, err := GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext: ", err)
-		return nil, err
-	}
-	coll := medicineCollection
-	collection := db.OpenCollections(coll)
-	filter := bson.M{
-		"createdBy": pharmacistId,
-	}
-	medicines, err := db.FindAll(c, collection, filter, nil)
-	if err != nil {
-		log.Println("Error from findAll: ", err)
-		return nil, err
-	}
-	if len(medicines) == 0 {
-		log.Println("This user does not have access")
-		return nil, errors.New("This user does not have access")
-	}
-	return medicines, nil
-}
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
 
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if ctxCollection == TenantCollection {
+		filter = bson.M{
+			"tenantId": code,
+		}
+	} else if ctxCollection == hospitalCollection {
+		filter = bson.M{
+			"hospitalId": code,
+		}
+	} else if ctxCollection == pharmacistCollection {
+		collection := db.OpenCollections(pharmacistCollection)
+		pharmacist := make(map[string]interface{})
+		err := db.FindOne(c, collection, bson.M{"code": code}, pharmacist)
+		if err != nil {
+			log.Println("Error from findOne: ", err)
+			return nil, err
+		}
+		filter = bson.M{
+			"hospitalId": pharmacist["createdBy"].(string),
+		}
+	} else if ctxCollection == doctorCollection {
+		filter = bson.M{
+			"doctorId": code,
+		}
+	} else if ctxCollection == nurseCollection {
+		filter = bson.M{
+			"nurseId": code,
+		}
+	} else {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
+	}
+	collection := db.OpenCollections(medicineCollection)
+	doc, err := db.FindAll(c, collection, filter, nil)
+	if err != nil {
+		log.Println("Error from FindAll", err)
+		return nil, err
+	}
+	return doc, nil
+}
 func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interface{}) (string, error) {
 	pharmacistId, err := GetFromContext[string](c, "code")
 	if err != nil {

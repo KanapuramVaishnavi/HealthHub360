@@ -138,7 +138,7 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (s
 		log.Println("Failed deleting old pharmacist cache:", err)
 	}
 
-	if err := redis.SetCache(c, key, data); err != nil {
+	if err := redis.SetCache(c, key, result); err != nil {
 		log.Println("Failed caching updated pharmacist:", err)
 	}
 
@@ -148,24 +148,31 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (s
 /*
 It gives the all the nurses on the databse
 */
-func FetchAllNurses(c *gin.Context, tenantid string) ([]interface{}, error) {
-	collection := db.OpenCollections(nurseCollection)
-	filter := bson.M{"tenantid": tenantid}
-	log.Println(filter)
-	doc, err := db.FindAll(c, collection, filter, nil)
-	if err != nil {
-		log.Println("Error from FindAll", err)
-		return nil, err
-	}
-	return doc, nil
-}
+func FetchAllNurses(c *gin.Context) ([]interface{}, error) {
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
 
-/*
-It gives the all the nurses on the specific doctor
-*/
-func FetchAllNursesofDoctor(c *gin.Context, Docid string) ([]interface{}, error) {
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if ctxCollection == TenantCollection {
+		filter = bson.M{
+			"tenantId": code,
+		}
+	} else if ctxCollection == hospitalCollection {
+		filter = bson.M{
+			"createdBy": code,
+		}
+	} else {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
+	}
 	collection := db.OpenCollections(nurseCollection)
-	filter := bson.M{"doctorid": Docid}
+	log.Println(filter)
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -238,8 +245,7 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 
 	err = redis.SetCache(c, key, result)
 	if err != nil {
-		log.Println("Error from setCache")
-		return nil, err
+		log.Println("Error from setCache: ", err)
 	}
 
 	return result, nil

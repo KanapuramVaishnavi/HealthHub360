@@ -240,6 +240,7 @@ func hasAccess(privileges []map[string]interface{}, moduleName string, access st
 						accessList = append(accessList, s)
 					}
 				}
+				log.Println("access: ", alPrim)
 				fmt.Printf("DEBUG => access raw type = %T\n", alPrim)
 				fmt.Printf("DEBUG =>access raw value = %#v\n", alPrim)
 			}

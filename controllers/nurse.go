@@ -14,8 +14,7 @@ func Nurse(router *gin.Engine) {
 		nurse.POST("/create", authorization.Authorize("nurse", "create"), CreateNurse)
 		nurse.PUT("/update/:code", authorization.Authorize("nurse", "update"), UpdateNurse)
 		nurse.GET("/fetch/:code", authorization.Authorize("nurse", "view"), FetchNurseByCode)
-		nurse.GET("/fetchAll/:tenantid", authorization.Authorize("nurse", "view"), FetchAllNurses)
-		nurse.GET("/fetchAllOfDoc/:doctorId", authorization.Authorize("nurse", "view"), FetchAllNursesofDoctor)
+		nurse.GET("/fetchAll", authorization.Authorize("nurse", "view"), FetchAllNurses)
 		nurse.DELETE("/delete/:nurseid", authorization.Authorize("nurse", "delete"), DeleteNurseByCode)
 	}
 }
@@ -76,21 +75,7 @@ func FetchNurseByCode(c *gin.Context) {
 This will help to fetch all the nurses of the tenant of the param given
 */
 func FetchAllNurses(c *gin.Context) {
-	tenantid := c.Param("tenantid")
-	doc, err := services.FetchAllNurses(c, tenantid)
-	if err != nil {
-		c.JSON(400, util.FailedResponse(err))
-		return
-	}
-	c.JSON(200, util.SuccessResponse(doc))
-}
-
-/*
-This will help to fetch all the nurses of the tenant of the param given
-*/
-func FetchAllNursesofDoctor(c *gin.Context) {
-	doctorid := c.Param("doctorid")
-	doc, err := services.FetchAllNursesofDoctor(c, doctorid)
+	doc, err := services.FetchAllNurses(c)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

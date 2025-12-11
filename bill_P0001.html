@@ -1,0 +1,222 @@
+
+ 
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Hospital Bill</title>
+ 
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        padding: 30px;
+        line-height: 1.5;
+    }
+ 
+    .header-bar {
+        width: 100%;
+        height: 150px;
+        background: #0f5fa8;
+        margin-bottom: 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 40px;
+    }
+ 
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 40px;
+    }
+ 
+    .hospital-logo {
+        width: 95px;
+        height: 95px;
+        object-fit: contain;
+        background: white;
+        border-radius: 10px;
+        border: 2px solid #ffffff;
+    }
+ 
+    .hospital-info {
+        color: white;
+        line-height: 1.3;
+    }
+ 
+    .hospital-info .hospital-name {
+        font-size: 28px;
+        font-weight: bold;
+    }
+ 
+    .barcode {
+        width: 150px;
+        height: 70px;
+        object-fit: contain;
+    }
+ 
+    h1 {
+        text-align: center;
+        color: #0f5fa8;
+        font-size: 24px;
+    }
+ 
+    h2 {
+        color: #0f5fa8;
+        margin-top: 25px;
+        margin-bottom: 10px;
+        font-size: 20px;
+    }
+ 
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        margin-bottom: 20px;
+    }
+ 
+    th, td {
+        border: 1px solid black;
+        padding: 10px;
+        font-size: 14px;
+    }
+ 
+    th {
+        background: #f2f2f2;
+        font-weight: bold;
+    }
+ 
+    .payment-box {
+        width: 50%;
+        padding: 15px;
+        border: 1px solid black;
+        background: #f9f9f9;
+        border-radius: 6px;
+    }
+</style>
+</head>
+ 
+<body>
+ 
+
+
+
+<div class="header-bar">
+ 
+    
+    <div class="header-left">
+        <img src="" alt="Hospital Logo" class="hospital-logo">
+ 
+        <div class="hospital-info">
+            <div class="hospital-name">Dharani HOSPITALS</div>
+            <div class="hospital-address">12/2/04,Behind the Cooperate Building,Balaga,Srikakulam-URBAN,532001</div>
+            <div class="hospital-contact">Contact: &#43;918754321098</div>
+        </div>
+    </div>
+ 
+    
+    <img src="" class="barcode" alt="Barcode">
+ 
+</div>
+ 
+<h1>Hospital Billing Summary</h1>
+ 
+
+
+
+ 
+<h2>Patient Information</h2>
+ 
+<table>
+    <tr>
+        <th>Patient Name</th><td>Revaki sharma</td>
+        <th>Patient ID</th><td>P0001</td>
+    </tr>
+    <tr>
+        <th>Age</th><td>22</td>
+        <th>Gender</th><td>Male</td>
+    </tr>
+    <tr>
+        <th>Phone</th><td>&#43;919008503740</td>
+        <th>Admission Date</th><td>28/11/2025</td>
+    </tr>
+</table>
+ 
+
+
+
+ 
+<h2>Bill Summary</h2>
+ 
+<table>
+    <tr>
+        
+        <th>Description</th>
+        <th>Amount (₹)</th>
+    </tr>
+ 
+    <tr>
+        
+        <td>Test Charges</td>
+        <td>₹ 600</td>
+    </tr>
+ 
+    <tr>
+        <td>Medication Charges</td>
+        <td>₹ 2</td>
+    </tr>
+ 
+    <tr>
+        <th colspan="1" style="text-align:right">Grand Total</th>
+        <th>₹ 602</th>
+    </tr>
+</table>
+ 
+
+
+
+ 
+<h2>Payment Method</h2>
+ 
+<div class="payment-box"
+     style="width:100%; display:flex; justify-content:space-between; gap:30px; align-items:flex-start;">
+ 
+    
+    <div style="flex:1; display:flex; flex-direction:column; gap:20px;">
+ 
+        
+        <div style="text-align:center;">
+            <p><strong>Scan to Pay (UPI — PhonePe / GPay / Paytm)</strong></p>
+ 
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADIAQMAAACXljzdAAAABlBMVEX///8AAABVwtN&#43;AAAACXBIWXMAAA7EAAAOxAGVKw4bAAABAklEQVRYhd2XwQ7DMAhD4cvz57BgQ9Zu6n0ekbYp7zIL11Czx1qJ2r8yPczDeRG/TfDf0wru22J14bqkdKYBbZUBrSFP6lTT/oXgy8P1STtxf24b4u7Do1qkk6LO6LxniBY5lcmk&#43;C4psqgzGRSB1jnap0mMz1QBPFml9QgWJAtTCZPWckICTJSwaYUMiwPi4iSFHKFQ9q7HUrYVf5gsakGH6DcOINMlNvsbO5NUK0tOwOU4jbEgS8aMt1Ill3HK/c0mtTXJojC&#43;LsRlI1Ul/WR1WPTw8UtSqBHo5JlltJNPmtCJ9o5yeWLRZrSetJqkJ5M1eXjTkyEnKejAXrBTlTzWC3LnHzs3RXR0AAAAAElFTkSuQmCC"
+                 style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
+            <p><strong style="color:#54595F;">UPI ID:</strong> 9876543210@okaxis</p>
+            <p><strong style="color:#54595F;">Amount:</strong> ₹ 602</p>
+        </div>
+ 
+        
+        <div style="text-align:center;">
+            <p><strong>Scan to Pay Using Cards( Credit & Debit ),Wallets & NetBanking </strong></p>
+ 
+            <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMgAAADIAQMAAACXljzdAAAABlBMVEX///8AAABVwtN&#43;AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAA/ElEQVRYhd2X2w6EMAhE6Zf751SYAWsTfXekphs5&#43;7ATrmv2aseEmcVjw&#43;PQ4d8m&#43;O3TAsbbwIPvyJLUmUpTLtWGTnmSF3T&#43;hCB6vyCViXHS9ZCjWqQ6RR5/7CFa5G4&#43;9ndFclAnbqikXFcl2fKuO&#43;MGry5JpRizKTdBuPmpSrg0oAF2yKpTaJKaskhHNyZj9ZAvk2KYPxxAt8qSIwgH9oNLZeWbKKHUTDrv7W3to4KkwzbLz23HRElbZmOr3JcDLYLK4kRdZbU6hR65dJpVv26lomSyjXO/nvcclSduq7rkCUsLcP/nKkaYiRy0o9cGXdKdwmYt3MxHVfJqJ70qrBxmp3FPAAAAAElFTkSuQmCC"
+                 style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
+        </div>
+    </div>
+ 
+    
+    <div style="flex:1; font-size:15px;">
+        <p><strong>Bank Transfer</strong></p>
+        <p><strong style="color:#444A50;">Account Number:</strong> 41330117270</p>
+        <p><strong style="color:#54595F;">IFSC:</strong> SBIN0011224</p>
+        <p><strong style="color:#54595F;">Bank:</strong> STATE BANK OF INDIA</p>
+    </div>
+ 
+</div>
+ 
+ 
+ 
+ 
+</body>
+</html>
+ 
+ 

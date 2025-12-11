@@ -13,6 +13,89 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+// func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
+// 	val := ""
+// 	err := ValidateUserInput(data)
+// 	if err != nil {
+// 		log.Println("Error from ValidateUserInput:", err)
+// 		return val, err
+// 	}
+
+// 	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
+// 	if err != nil {
+// 		log.Println("Error from fetchRoleDocAndCollection:", err)
+// 		return val, err
+// 	}
+// 	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+// 	if err != nil {
+// 		log.Println("Error from GenerateUserRole", err)
+// 		return val, err
+// 	}
+// 	log.Println(code)
+// 	otp, err := GenerateAndHashOTP(data)
+// 	if err != nil {
+// 		log.Println("Error from GeneraeAndHashOTP:", err)
+// 		return val, err
+// 	}
+// 	log.Println(otp)
+// 	err = trimIfExists(data, "gender")
+// 	if err != nil {
+// 		log.Println("Error from trimIfExists", err)
+// 		return val, err
+// 	}
+// 	err = trimIfExists(data, "admissionDate")
+// 	if err != nil {
+// 		log.Println("Error from trimIfExists")
+// 		return val, err
+// 	}
+// 	tenantId, err := GetTenantIdFromContext(c)
+// 	if err != nil {
+// 		log.Println("Error from getTenantIdFromToken", err)
+// 		return val, err
+// 	}
+// 	log.Println("tenantId from context: ", tenantId)
+// 	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
+// 		log.Println("Error from prepareUser :", err)
+// 		return val, err
+// 	}
+// 	age, err := CalculateAge(data["dob"].(string))
+// 	if err != nil {
+// 		log.Println("Error from CalculateAge")
+// 		return val, err
+// 	}
+// 	data["age"] = age
+// 	receptionist, err := FetchReceptionistByCode(c, createdBy)
+// 	if err != nil {
+// 		log.Println("Error from fetchReceptionistByCode: ", err)
+// 		return val, err
+// 	}
+// 	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
+// 	data["hospitalId"] = receptionist["createdBy"].(string)
+
+// 	if _, err := SaveUserToDB(collection, data); err != nil {
+// 		log.Println("Error from the saveUserToDB:", err)
+// 		return val, err
+// 	}
+// 	key := util.PatientKey + code
+// 	err = redis.SetCache(c, key, data)
+// 	if err != nil {
+// 		log.Println("Failed caching new patient: ", err)
+// 	}
+// 	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+// 		log.Println("Error from the createLoginRecord", err)
+// 		return val, err
+// 	}
+// 	subject := "Your Patient OTP Verification"
+// 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
+
+//		err = SendOTPToMail(data["email"].(string), subject, body)
+//		if err != nil {
+//			log.Println("OTP email failed:", err)
+//			return val, errors.New("failed to send OTP email")
+//		}
+//		log.Println("mail sent successfully")
+//		return "created successfully", nil
+//	}
 func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
 	val := ""
 	err := ValidateUserInput(data)
@@ -63,6 +146,31 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from CalculateAge")
 		return val, err
 	}
+
+	data["age"] = age
+
+	var guardianConsent []interface{}
+	var consentId string
+
+	if age < 18 {
+
+		if err := ValidateGuardianConsent(data, age); err != nil {
+			return "", err
+		}
+
+		// Generate consentId
+		consentId, _ = GenerateEmpCode("CONSENT")
+		data["consentId"] = consentId
+
+		raw := data["consent"]
+		guardianConsent, _ = raw.([]interface{})
+
+		// Remove from patient before saving
+		delete(data, "consent")
+	}
+
+	data["age"] = age
+
 	data["age"] = age
 	key := util.PatientKey + code
 	err = redis.SetCache(c, key, data)
@@ -77,6 +185,20 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from the createLoginRecord", err)
 		return val, err
 	}
+	if age < 18 && consentId != "" {
+		consentRecord := bson.M{
+			"consentId": consentId,
+			"patientId": code,
+			"guardians": guardianConsent,
+			"version":   1,
+			"createdAt": time.Now(),
+		}
+		if _, err := SaveUserToDB("CONSENT", consentRecord); err != nil {
+			log.Println("Error saving consent:", err)
+			return val, err
+		}
+	}
+
 	subject := "Your Patient OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
 
@@ -89,56 +211,82 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	return "created successfully", nil
 }
 
+/*
+Here the Validation of the patient will happenn(CONSENT) Validation is done here
+*/
+func ValidateGuardianConsent(data map[string]interface{}, age int) error {
+	raw, ok := data["consent"]
+	if !ok {
+		return errors.New("minor patient requires at least one guardian")
+	}
+
+	consent, ok := raw.([]interface{})
+	if !ok || len(consent) == 0 {
+		return errors.New("minor patient requires at least one guardian consent")
+	}
+
+	if len(consent) > 2 {
+		return errors.New("only up to two guardians are allowed")
+	}
+
+	for i, g := range consent {
+		guardian, ok := g.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("guardian %d is invalid", i+1)
+		}
+
+		required := []string{"name", "phoneNo", "govId", "relation", "signature"}
+		for _, field := range required {
+			val, exists := guardian[field]
+			if !exists || val == "" {
+				return fmt.Errorf("guardian %d missing field: %s", i+1, field)
+			}
+		}
+	}
+
+	return nil
+}
+
 func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{}, error) {
+
 	key := util.PatientKey + patientId
 
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	collFromContext := c.GetString("collection")
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+
+	collectionFromContext := db.OpenCollections(collFromContext)
+	userData := make(map[string]interface{})
+	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
 	if err != nil {
-		log.Println("Error from getTenantIdFromToken ", err)
+		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	log.Println("tenantId from token: ", tenantId)
 
-	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(c, key, &cached)
-
-	if err == nil && exists {
-		log.Println("From cache: ", cached)
-		tenantIdCache, ok := cached["tenantId"].(string)
-		if exists && !ok {
-			fmt.Println("createdBy not found or invalid")
-			return nil, errors.New("Unable to get the CreatedBy field from cache")
-		}
-		if tenantIdCache != tenantId {
-			log.Println("Error from the tenant which is tenant doesnot have access")
-			return nil, errors.New("This tenant does not have access")
-		}
-		return cached, nil
+	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+		return cached, err
 	}
-
-	collection := db.OpenCollections(patientCollection)
-	filter := bson.M{
-		"code": patientId,
-	}
-
+	coll := db.OpenCollections(patientCollection)
+	filter := bson.M{"code": patientId}
 	result := make(map[string]interface{})
-	err = db.FindOne(c, collection, filter, &result)
-	log.Println("From db: ", result)
+
+	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function: ", err)
-		return nil, err
+		log.Println("Error from findOne: ", err)
+		return nil, errors.New("record not found")
 	}
-	tenantIdFromColl := result["tenantId"].(string)
-	if tenantIdFromColl != tenantId {
-		log.Println("This tenant does not have access to fetch")
-		return nil, errors.New("This tenant does not have access to fetch")
+
+	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
 	if err != nil {
-		log.Println("Error from SetCache: ", err)
-		return nil, err
+		log.Println("Error from setCache: ", err)
 	}
+
 	return result, nil
+
 }
 
 func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]interface{}) (string, error) {
@@ -209,11 +357,6 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 		return val, err
 	}
 	key := util.PatientKey + patientId
-	err = db.FindOne(c, collection, filter, result)
-	if err != nil {
-		log.Println("Error from findOne: ", err)
-		return val, err
-	}
 	if err := redis.DeleteCache(c, key); err != nil {
 		log.Println("Failed deleting old patient cache:", err)
 	}
@@ -225,13 +368,31 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 }
 
 func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
-	receptionistId, err := GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext", err)
-		return nil, err
-	}
-	filter := bson.M{
-		"createdBy": receptionistId,
+	code := c.GetString("code")
+	log.Println("code from context: ", code)
+	ctxCollection := c.GetString("collection")
+	log.Println("collection from context: ", ctxCollection)
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	log.Println("isSuperAdmin from context: ", isSuperAdmin)
+
+	filter := make(map[string]interface{})
+	if isSuperAdmin {
+		filter = bson.M{}
+	} else if ctxCollection == TenantCollection {
+		filter = bson.M{
+			"tenantId": code,
+		}
+	} else if ctxCollection == hospitalCollection {
+		filter = bson.M{
+			"hospitalId": code,
+		}
+	} else if ctxCollection == receptionistCollection {
+		filter = bson.M{
+			"createdBy": code,
+		}
+	} else {
+		log.Println("This user doesnot have access")
+		return nil, errors.New("This user doesnot have access")
 	}
 	coll := patientCollection
 	collection := db.OpenCollections(coll)

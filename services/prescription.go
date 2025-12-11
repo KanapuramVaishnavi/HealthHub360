@@ -93,8 +93,13 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 	if err != nil {
 		return "", err
 	}
-
+	doctor, err := FetchDoctorByCode(c, doctorId)
+	if err != nil {
+		log.Println("Error from fetchDoctorByCode: ", err)
+		return "", err
+	}
 	data["code"] = prescriptionCode
+	data["hospitalId"] = doctor["createdBy"].(string)
 	data["tenantId"] = tenantId
 	data["createdBy"] = doctorId
 	data["updatedBy"] = doctorId
