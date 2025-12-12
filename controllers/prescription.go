@@ -15,7 +15,7 @@ func Prescription(router *gin.Engine) {
 		prescription.POST("/create/:medicalRecordId", authorization.Authorize("prescription", "create"), CreatePrescription)
 		prescription.GET("/fetch/:prescriptionId", authorization.Authorize("prescription", "view"), FetchPrescriptionByCode)
 		prescription.GET("/fetchAll", authorization.Authorize("prescription", "view"), FetchAllPrescriptions)
-		// prescription.PATCH("/update/:prescriptionId/:medicineId", authorization.Authorize("prescription", "update"), UpdatePrescription)
+		prescription.PATCH("/update/:prescriptionId/:medicineId", authorization.Authorize("prescription", "update"), UpdatePrescription)
 	}
 }
 func CreatePrescription(c *gin.Context) {
@@ -52,18 +52,18 @@ func FetchAllPrescriptions(c *gin.Context) {
 	c.JSON(http.StatusOK, util.SuccessResponse(prescriptions))
 }
 
-// func UpdatePrescription(c *gin.Context) {
-// 	prescriptionId := c.Param("prescriptionId")
-// 	medicineId := c.Param("medicineId")
-// 	data := make(map[string]interface{})
-// 	if err := c.BindJSON(&data); err != nil {
-// 		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
-// 		return
-// 	}
-// 	msg, err := services.UpdatePrescription(c, prescriptionId, medicineId, data)
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
-// 		return
-// 	}
-// 	c.JSON(http.StatusOK, util.SuccessResponse(msg))
-// }
+func UpdatePrescription(c *gin.Context) {
+	prescriptionId := c.Param("prescriptionId")
+	medicineId := c.Param("medicineId")
+	data := make(map[string]interface{})
+	if err := c.BindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	msg, err := services.UpdatePrescription(c, prescriptionId, medicineId, data)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, util.FailedResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, util.SuccessResponse(msg))
+}

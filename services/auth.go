@@ -248,7 +248,8 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 	collection := loginDoc["collection"].(string)
 	code := loginDoc["code"].(string)
 	email := loginDoc["email"].(string)
-
+	log.Println("collection: ", collection)
+	log.Println("code: ", code)
 	userDoc, err := FetchUserByRole(c, collection, code)
 	if err != nil {
 		log.Println("Error from FetchUserByRole", err)
@@ -309,6 +310,7 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 		log.Println("Error from FetchUserByRole", err)
 		return nil, err
 	}
+	log.Println("patient : ", user)
 	return user, nil
 }
 

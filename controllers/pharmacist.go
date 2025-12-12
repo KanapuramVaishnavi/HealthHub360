@@ -16,6 +16,7 @@ func Pharmacist(router *gin.Engine) {
 		pharma.GET("/fetch/:code", authorization.Authorize("pharmacist", "view"), FetchPharmacistByCode)
 		pharma.GET("/fetchAll", authorization.Authorize("pharmacist", "view"), FetchAllPharmacist)
 		pharma.PATCH("/update/:code", authorization.Authorize("pharmacist", "update"), UpdatePharmacist)
+		pharma.DELETE("/delete/:code", authorization.Authorize("pharmacist", "delete"), DeletePharmacistByCode)
 	}
 }
 
@@ -69,7 +70,12 @@ func UpdatePharmacist(c *gin.Context) {
 	c.JSON(200, util.SuccessResponse(msg))
 }
 
-// func DeletePharmacist(c *gin.Context) {
-
-// }
-// \
+func DeletePharmacistByCode(c *gin.Context) {
+	pharmacistId := c.Param("code")
+	msg, err := services.DeletePharmacist(c, pharmacistId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(msg))
+}

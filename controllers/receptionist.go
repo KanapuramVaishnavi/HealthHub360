@@ -16,6 +16,7 @@ func Receptionist(router *gin.Engine) {
 		recep.GET("/fetch/:code", authorization.Authorize("receptionist", "view"), FetchReceptionistByCode)
 		recep.GET("/fetchAll", authorization.Authorize("receptionist", "view"), FetchAllReceptionist)
 		recep.PATCH("/update/:code", authorization.Authorize("receptionist", "update"), UpdateReceptionist)
+		recep.DELETE("/delete/:code", authorization.Authorize("receptionist", "delete"), DeleteReceptionist)
 	}
 }
 
@@ -61,6 +62,16 @@ func UpdateReceptionist(c *gin.Context) {
 		return
 	}
 	msg, err := services.UpdateReceptionist(c, data, receptionistId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(msg))
+}
+
+func DeleteReceptionist(c *gin.Context) {
+	receptionistId := c.Param("code")
+	msg, err := services.DeleteReceptionist(c, receptionistId)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

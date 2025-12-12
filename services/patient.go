@@ -13,89 +13,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
-// func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
-// 	val := ""
-// 	err := ValidateUserInput(data)
-// 	if err != nil {
-// 		log.Println("Error from ValidateUserInput:", err)
-// 		return val, err
-// 	}
-
-// 	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
-// 	if err != nil {
-// 		log.Println("Error from fetchRoleDocAndCollection:", err)
-// 		return val, err
-// 	}
-// 	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
-// 	if err != nil {
-// 		log.Println("Error from GenerateUserRole", err)
-// 		return val, err
-// 	}
-// 	log.Println(code)
-// 	otp, err := GenerateAndHashOTP(data)
-// 	if err != nil {
-// 		log.Println("Error from GeneraeAndHashOTP:", err)
-// 		return val, err
-// 	}
-// 	log.Println(otp)
-// 	err = trimIfExists(data, "gender")
-// 	if err != nil {
-// 		log.Println("Error from trimIfExists", err)
-// 		return val, err
-// 	}
-// 	err = trimIfExists(data, "admissionDate")
-// 	if err != nil {
-// 		log.Println("Error from trimIfExists")
-// 		return val, err
-// 	}
-// 	tenantId, err := GetTenantIdFromContext(c)
-// 	if err != nil {
-// 		log.Println("Error from getTenantIdFromToken", err)
-// 		return val, err
-// 	}
-// 	log.Println("tenantId from context: ", tenantId)
-// 	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
-// 		log.Println("Error from prepareUser :", err)
-// 		return val, err
-// 	}
-// 	age, err := CalculateAge(data["dob"].(string))
-// 	if err != nil {
-// 		log.Println("Error from CalculateAge")
-// 		return val, err
-// 	}
-// 	data["age"] = age
-// 	receptionist, err := FetchReceptionistByCode(c, createdBy)
-// 	if err != nil {
-// 		log.Println("Error from fetchReceptionistByCode: ", err)
-// 		return val, err
-// 	}
-// 	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
-// 	data["hospitalId"] = receptionist["createdBy"].(string)
-
-// 	if _, err := SaveUserToDB(collection, data); err != nil {
-// 		log.Println("Error from the saveUserToDB:", err)
-// 		return val, err
-// 	}
-// 	key := util.PatientKey + code
-// 	err = redis.SetCache(c, key, data)
-// 	if err != nil {
-// 		log.Println("Failed caching new patient: ", err)
-// 	}
-// 	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
-// 		log.Println("Error from the createLoginRecord", err)
-// 		return val, err
-// 	}
-// 	subject := "Your Patient OTP Verification"
-// 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
-
-//		err = SendOTPToMail(data["email"].(string), subject, body)
-//		if err != nil {
-//			log.Println("OTP email failed:", err)
-//			return val, errors.New("failed to send OTP email")
-//		}
-//		log.Println("mail sent successfully")
-//		return "created successfully", nil
-//	}
 func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
 	val := ""
 	err := ValidateUserInput(data)
@@ -146,59 +63,38 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from CalculateAge")
 		return val, err
 	}
-
 	data["age"] = age
-
-	var guardianConsent []interface{}
-	var consentId string
-
+	listOfGuardians := []string{}
 	if age < 18 {
-
-		if err := ValidateGuardianConsent(data, age); err != nil {
-			return "", err
+		if listOfGuardians, err = ValidateGuardianAndCreate(c, data, listOfGuardians, createdBy, tenantId); err != nil {
+			log.Println("Error from validateConsentAndCreate: ", err)
+			return val, err
 		}
-
-		// Generate consentId
-		consentId, _ = GenerateEmpCode("CONSENT")
-		data["consentId"] = consentId
-
-		raw := data["consent"]
-		guardianConsent, _ = raw.([]interface{})
-
-		// Remove from patient before saving
-		delete(data, "consent")
 	}
+	log.Println("ListOfGuardians: ", listOfGuardians)
+	data["listOfGuardians"] = listOfGuardians
+	receptionist, err := FetchReceptionistByCode(c, createdBy)
+	if err != nil {
+		log.Println("Error from fetchReceptionistByCode: ", err)
+		return val, err
+	}
+	log.Println("Receptionist: ", receptionist)
+	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
+	data["hospitalId"] = receptionist["createdBy"].(string)
 
-	data["age"] = age
-
-	data["age"] = age
+	if _, err := SaveUserToDB(collection, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
+		return val, err
+	}
 	key := util.PatientKey + code
 	err = redis.SetCache(c, key, data)
 	if err != nil {
 		log.Println("Failed caching new patient: ", err)
 	}
-	if _, err := SaveUserToDB(collection, data); err != nil {
-		log.Println("Error from the saveUserToDB:", err)
-		return val, err
-	}
 	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return val, err
 	}
-	if age < 18 && consentId != "" {
-		consentRecord := bson.M{
-			"consentId": consentId,
-			"patientId": code,
-			"guardians": guardianConsent,
-			"version":   1,
-			"createdAt": time.Now(),
-		}
-		if _, err := SaveUserToDB("CONSENT", consentRecord); err != nil {
-			log.Println("Error saving consent:", err)
-			return val, err
-		}
-	}
-
 	subject := "Your Patient OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
 
@@ -210,6 +106,222 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	log.Println("mail sent successfully")
 	return "created successfully", nil
 }
+func FetchGuardiansFromData(data map[string]interface{}) ([]interface{}, error) {
+	raw, ok := data["guardians"]
+	if !ok {
+		log.Println("Patient is minor please provide guardians details")
+		return nil, errors.New("Patient is minor please provide guardians details")
+	}
+	guardians, ok := raw.([]interface{})
+	if !ok || len(guardians) == 0 {
+		log.Println("Type assertion error for guardians field")
+		return nil, errors.New("Type assertion error for guardians field")
+	}
+	return guardians, nil
+}
+
+func ValidateGuardianFields(guardian map[string]interface{}) (map[string]interface{}, error) {
+	requiredFields := []string{"name", "dob", "phoneNo", "mail", "govtId", "relation", "roleCode"}
+	for _, field := range requiredFields {
+		err := getTrimmedString(guardian, field)
+		if err != nil {
+			log.Println("Error from getTrimmedString: ", err)
+			return nil, err
+		}
+
+	}
+	return guardian, nil
+}
+func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, listOfGuardians []string, createdBy, tenantId string) ([]string, error) {
+
+	guardians, err := FetchGuardiansFromData(data)
+	if err != nil {
+		log.Println("Error from fetchGuardiansFromData: ", err)
+		return nil, err
+	}
+	for _, g := range guardians {
+		guardian, ok := g.(map[string]interface{})
+		if !ok {
+			log.Println("Unable to get the guardian")
+			return nil, errors.New("Unable to fetch the guardian")
+		}
+		guardian, err = ValidateGuardianFields(guardian)
+		if err != nil {
+			log.Println("Error from validateGuardianField: ", err)
+			return nil, err
+		}
+		log.Println("Updated guardian: ", guardian)
+		guardianId, err := GenerateEmpCode(GuardianCollection)
+		if err != nil {
+			log.Println("Error from generateEmpCode: ", err)
+			return nil, err
+		}
+		listOfGuardians = append(listOfGuardians, guardianId)
+		otp, err := GenerateAndHashOTP(guardian)
+		if err != nil {
+			log.Println("Error from generateAndHashOTP: ", err)
+			return nil, err
+		}
+		log.Printf("guardian %s guardian OTP %s: ", guardianId, otp)
+		guardian["guardianId"] = guardianId
+		err = PrepareUser(guardian, guardianId, createdBy, tenantId)
+		if err != nil {
+			log.Println("Error from prepareUser: ", err)
+			return nil, err
+		}
+		age, err := CalculateAge(guardian["dob"].(string))
+		if err != nil {
+			log.Println("Error from calculateAge: ", err)
+			return nil, err
+		}
+		if age < 18 {
+			log.Println("Guardian is minor")
+			return nil, errors.New("Guardian is minor")
+		}
+		guardian["age"] = age
+		collection := db.OpenCollections(GuardianCollection)
+		_, err = db.CreateOne(c, collection, guardian)
+		if err != nil {
+			log.Println("Error while inserting into db: ", err)
+			return nil, err
+		}
+		key := util.GuardianKey + guardianId
+		err = redis.SetCache(c, key, guardian)
+		if err != nil {
+			log.Println("Failed caching new  guardian: ", err)
+		}
+		err = CreateLoginRecord(c, GuardianCollection, guardian["code"].(string), guardian["mail"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
+		if err != nil {
+			log.Println("Error from guardian createLoginRecord: ", err)
+			return nil, err
+		}
+		subject := "Guardian OTP Verification"
+		body := fmt.Sprintf("Hello %s,\n\nYour OTP for guardian verification is: %s\n\nThank you!", guardian["name"].(string), otp)
+
+		err = SendOTPToMail(guardian["mail"].(string), subject, body)
+		if err != nil {
+			log.Println("OTP mail failed:", err)
+			return nil, errors.New("failed to send OTP mail")
+		}
+		log.Println("mail sent successfully")
+	}
+	return listOfGuardians, nil
+}
+
+// func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
+// 	val := ""
+// 	err := ValidateUserInput(data)
+// 	if err != nil {
+// 		log.Println("Error from ValidateUserInput:", err)
+// 		return val, err
+// 	}
+
+// 	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
+// 	if err != nil {
+// 		log.Println("Error from fetchRoleDocAndCollection:", err)
+// 		return val, err
+// 	}
+// 	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+// 	if err != nil {
+// 		log.Println("Error from GenerateUserRole", err)
+// 		return val, err
+// 	}
+// 	log.Println(code)
+// 	otp, err := GenerateAndHashOTP(data)
+// 	if err != nil {
+// 		log.Println("Error from GeneraeAndHashOTP:", err)
+// 		return val, err
+// 	}
+// 	log.Println(otp)
+// 	err = trimIfExists(data, "gender")
+// 	if err != nil {
+// 		log.Println("Error from trimIfExists", err)
+// 		return val, err
+// 	}
+// 	err = trimIfExists(data, "admissionDate")
+// 	if err != nil {
+// 		log.Println("Error from trimIfExists")
+// 		return val, err
+// 	}
+// 	tenantId, err := GetTenantIdFromContext(c)
+// 	if err != nil {
+// 		log.Println("Error from getTenantIdFromToken", err)
+// 		return val, err
+// 	}
+// 	log.Println("tenantId from context: ", tenantId)
+// 	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
+// 		log.Println("Error from prepareUser :", err)
+// 		return val, err
+// 	}
+// 	age, err := CalculateAge(data["dob"].(string))
+// 	if err != nil {
+// 		log.Println("Error from CalculateAge")
+// 		return val, err
+// 	}
+
+// 	data["age"] = age
+
+// 	var guardianConsent []interface{}
+// 	var consentId string
+
+// 	if age < 18 {
+
+// 		if err := ValidateGuardianConsent(data, age); err != nil {
+// 			return "", err
+// 		}
+
+// 		// Generate consentId
+// 		consentId, _ = GenerateEmpCode("CONSENT")
+// 		data["consentId"] = consentId
+
+// 		raw := data["consent"]
+// 		guardianConsent, _ = raw.([]interface{})
+
+// 		// Remove from patient before saving
+// 		delete(data, "consent")
+// 	}
+
+// 	data["age"] = age
+
+// 	data["age"] = age
+// 	key := util.PatientKey + code
+// 	err = redis.SetCache(c, key, data)
+// 	if err != nil {
+// 		log.Println("Failed caching new patient: ", err)
+// 	}
+// 	if _, err := SaveUserToDB(collection, data); err != nil {
+// 		log.Println("Error from the saveUserToDB:", err)
+// 		return val, err
+// 	}
+// 	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+// 		log.Println("Error from the createLoginRecord", err)
+// 		return val, err
+// 	}
+// 	if age < 18 && consentId != "" {
+// 		consentRecord := bson.M{
+// 			"consentId": consentId,
+// 			"patientId": code,
+// 			"guardians": guardianConsent,
+// 			"version":   1,
+// 			"createdAt": time.Now(),
+// 		}
+// 		if _, err := SaveUserToDB("CONSENT", consentRecord); err != nil {
+// 			log.Println("Error saving consent:", err)
+// 			return val, err
+// 		}
+// 	}
+
+// 	subject := "Your Patient OTP Verification"
+// 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
+
+// 	err = SendOTPToMail(data["email"].(string), subject, body)
+// 	if err != nil {
+// 		log.Println("OTP email failed:", err)
+// 		return val, errors.New("failed to send OTP email")
+// 	}
+// 	log.Println("mail sent successfully")
+// 	return "created successfully", nil
+// }
 
 /*
 Here the Validation of the patient will happenn(CONSENT) Validation is done here

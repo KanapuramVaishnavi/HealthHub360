@@ -17,4 +17,5 @@ const (
 	TestKey          string = "TEST#"
 	TestReportKey    string = "TEST_REPORT#"
 	BillKey          string = "BILL#"
+	GuardianKey      string = "GUARDIAN#"
 )

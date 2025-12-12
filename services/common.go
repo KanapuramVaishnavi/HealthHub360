@@ -43,6 +43,7 @@ const (
 	prescriptionCollection   = "PRESCRIPTION"
 	RoleCollection           = "ROLE"
 	BillCollection           = "BILL"
+	GuardianCollection       = "GUARDIAN"
 )
 
 var ctx context.Context = context.Background()
@@ -58,6 +59,8 @@ func GenerateEmpCode(collName string) (string, error) {
 	width := 4 // e.g. T0001 → 4 digits
 	var sortField string = "code"
 	switch collName {
+	case "GUARDIAN":
+		prefix = "G"
 	case "BILL":
 		prefix = "B"
 	case "TEST_REPORT":
@@ -532,10 +535,11 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 		},
 	}
 	log.Println(filter)
-	var existing models.Login
+	existing := make(map[string]interface{})
 	err := db.FindOne(ctx, loginCollection, filter, &existing)
+	log.Println("existing: ", existing)
 	log.Println(err)
-	if err == nil {
+	if err == nil && len(existing) > 0 {
 		log.Println("Already exists in db: ", err)
 		return errors.New("Already exists in loginCollection")
 	}

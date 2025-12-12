@@ -133,7 +133,6 @@ func PrepareRole(c *gin.Context, data map[string]interface{}, roleName string, p
  */
 
 func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interface{}, error) {
-
 	roleName, privileges, err := ValidateRoleData(data)
 	if err != nil {
 		return nil, err
@@ -443,7 +442,7 @@ func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, err
 		return cached, nil
 	}
 
-	collection := db.OpenCollections("role")
+	collection := db.OpenCollections(RoleCollection)
 	filter := bson.M{"roleCode": roleCode}
 	role := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, role)
