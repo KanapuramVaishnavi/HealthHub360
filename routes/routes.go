@@ -13,7 +13,6 @@ func Routes(r *gin.Engine) {
 	r.POST("/role/create/superAdmin", controllers.CreateRole)
 	r.POST("/superAdmin/create", controllers.CreateSuperAdmin)
 	controllers.Auth(r)
-	controllers.Role(r)
 	//privateroutes
 	r.Use(authorization.JWTAuth())
 	controllers.SuperAdmin(r)
@@ -32,4 +31,6 @@ func Routes(r *gin.Engine) {
 	controllers.Test(r)
 	controllers.Bill(r)
 	controllers.Report(r)
+
+	controllers.Role(r)
 }

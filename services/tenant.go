@@ -253,23 +253,28 @@ func updateTenantInDB(code string, update bson.M) error {
 It deletes the document which matches the code given in the
 tenant where it used delete one function
 */
-func DeleteTenantByCode(c *gin.Context, code string) error {
-
-	if code == "" {
+func DeleteTenantByCode(c *gin.Context, tenantId string) error {
+	superAdmin := c.GetString("code")
+	if tenantId == "" {
 		return errors.New("tenant code required")
 	}
 	collection := db.OpenCollections(TenantCollection)
-	filter := bson.M{"code": code}
-	var res interface{}
+	filter := bson.M{"code": tenantId}
+	res := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, res)
 	if err != nil {
+		log.Println("Error from findOne: ", err)
 		return err
+	}
+	if superAdmin != res["createdBy"].(string) {
+		log.Println("User doesnot have access")
+		return errors.New("User doesnot have access")
 	}
 	delete, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
 		return err
 	}
-	key := util.TenantKey + code
+	key := util.TenantKey + tenantId
 	log.Println("Tenant cache key: ", key)
 	err = redis.DeleteCache(c, key)
 	if err != nil {

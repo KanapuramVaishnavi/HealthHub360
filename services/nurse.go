@@ -254,14 +254,43 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 /*
 Delete Nurse By code where it matchs the code of the given parameters
 */
-func DeleteNurseByCode(c *gin.Context, nurseid string) error {
+func DeleteNurseByCode(c *gin.Context, nurseId string) (string, error) {
 	collection := db.OpenCollections(nurseCollection)
-	filter := bson.M{"code": nurseid}
-	doc, err := db.DeleteOne(c, collection, filter)
-	log.Println(doc.DeletedCount)
-	if err != nil {
-		log.Println("Error from DeleteOne", err)
-		return err
+	hospitalCodeRaw, ok := c.Get("code")
+	if !ok {
+		log.Println("Unable to fetch code from the context")
+		return "", errors.New("Error unable to fetch code from the context")
 	}
-	return nil
+	hospitalId, ok := hospitalCodeRaw.(string)
+	if !ok {
+		return "", errors.New("Unable to get hospitalCode from the context")
+	}
+
+	filter := bson.M{
+		"code": nurseId,
+	}
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function: ", err)
+		return "", err
+	}
+	val := result["createdBy"].(string)
+	if val != hospitalId {
+		log.Println("This hospital admin doesnot have access")
+		return "", errors.New("This hospital admin doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from deleteOne: ", err)
+		return "", err
+	}
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.NurseKey + nurseId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache: ", err)
+	}
+	msg := fmt.Sprintf("The doctor %s deleted ", nurseId)
+	return msg, nil
 }

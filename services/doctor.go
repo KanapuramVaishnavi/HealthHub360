@@ -264,20 +264,20 @@ func FetchAllDoctors(c *gin.Context) ([]interface{}, error) {
 * If comparision works well go for the delete
 * If not return no another hospital admin can have access to delete it
  */
-func DeleteDoctor(c *gin.Context, code string) (string, error) {
+func DeleteDoctor(c *gin.Context, doctorId string) (string, error) {
 	collection := db.OpenCollections(doctorCollection)
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to fetch code from the context")
 		return "", errors.New("Error unable to fetch code from the context")
 	}
-	hospitalCode, ok := hospitalCodeRaw.(string)
+	hospitalId, ok := hospitalCodeRaw.(string)
 	if !ok {
 		return "", errors.New("Unable to get hospitalCode from the context")
 	}
 
 	filter := bson.M{
-		"code": code,
+		"code": doctorId,
 	}
 	result := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, result)
@@ -286,11 +286,21 @@ func DeleteDoctor(c *gin.Context, code string) (string, error) {
 		return "", err
 	}
 	val := result["createdBy"].(string)
-	if val != hospitalCode {
+	if val != hospitalId {
 		log.Println("This hospital admin doesnot have access")
 		return "", errors.New("This hospital admin doesnot have access")
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
-	msg := fmt.Sprintf("The doctor %s deleted and the count is %d", code, deleted)
+	if err != nil {
+		log.Println("Error from deleteOne: ", err)
+		return "", err
+	}
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.DoctorKey + doctorId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache: ", err)
+	}
+	msg := fmt.Sprintf("The doctor %s deleted", doctorId)
 	return msg, nil
 }

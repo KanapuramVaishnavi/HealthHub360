@@ -274,6 +274,14 @@ func hasAccess(privileges []map[string]interface{}, moduleName string, access st
  */
 func Authorize(moduleName string, access string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		code := c.GetString("code")
+		log.Println("code from context: ", code)
+		roleCode := c.GetString("roleCode")
+		log.Println("roleCode from context: ", roleCode)
+		ctxCollection := c.GetString("collection")
+		log.Println("collection from context: ", ctxCollection)
+		isSuperAdmin := c.GetBool("isSuperAdmin")
+		log.Println("isSuperAdmin from context: ", isSuperAdmin)
 		roleCode, err := getRoleCode(c)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})

@@ -248,3 +248,44 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, receptionis
 
 	return "Updated Successfully", nil
 }
+
+func DeleteReceptionist(c *gin.Context, receptionistId string) (string, error) {
+	collection := db.OpenCollections(receptionistCollection)
+	hospitalCodeRaw, ok := c.Get("code")
+	if !ok {
+		log.Println("Unable to fetch code from the context")
+		return "", errors.New("Error unable to fetch code from the context")
+	}
+	hospitalId, ok := hospitalCodeRaw.(string)
+	if !ok {
+		return "", errors.New("Unable to get hospitalCode from the context")
+	}
+
+	filter := bson.M{
+		"code": receptionistId,
+	}
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from the findOne function: ", err)
+		return "", err
+	}
+	val := result["createdBy"].(string)
+	if val != hospitalId {
+		log.Println("This hospital admin doesnot have access")
+		return "", errors.New("This hospital admin doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from deleteOne: ", err)
+		return "", err
+	}
+	log.Println("deleted: ", deleted)
+	key := util.ReceptionistKey + receptionistId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache: ", err)
+	}
+	msg := fmt.Sprintf("The doctor %s deleted", receptionistId)
+	return msg, nil
+}

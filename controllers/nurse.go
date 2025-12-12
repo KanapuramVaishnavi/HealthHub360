@@ -15,7 +15,7 @@ func Nurse(router *gin.Engine) {
 		nurse.PUT("/update/:code", authorization.Authorize("nurse", "update"), UpdateNurse)
 		nurse.GET("/fetch/:code", authorization.Authorize("nurse", "view"), FetchNurseByCode)
 		nurse.GET("/fetchAll", authorization.Authorize("nurse", "view"), FetchAllNurses)
-		nurse.DELETE("/delete/:nurseid", authorization.Authorize("nurse", "delete"), DeleteNurseByCode)
+		nurse.DELETE("/delete/code", authorization.Authorize("nurse", "delete"), DeleteNurseByCode)
 	}
 }
 
@@ -87,11 +87,11 @@ func FetchAllNurses(c *gin.Context) {
 This will help to delete  the specific nurse of the code in the nurse collection
 */
 func DeleteNurseByCode(c *gin.Context) {
-	nurseid := c.Param("nurseid")
-	err := services.DeleteNurseByCode(c, nurseid)
+	nurseid := c.Param("code")
+	msg, err := services.DeleteNurseByCode(c, nurseid)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	c.JSON(200, util.SuccessResponse("Deleted Successfully"))
+	c.JSON(200, util.SuccessResponse(msg))
 }

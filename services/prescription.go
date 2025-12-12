@@ -5,6 +5,7 @@ import (
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -53,7 +54,11 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		log.Println("Medicines field must be list of interface")
 		return "", errors.New("medicines must be an array")
 	}
-
+	err = getTrimmedString(data, "diagnosis")
+	if err != nil {
+		log.Println("Error from getTrimmedString: ", err)
+		return "", err
+	}
 	for _, m := range rawMedicines {
 		medicine, ok := m.(map[string]interface{})
 		if !ok {
@@ -196,81 +201,98 @@ func FetchAllPresciptions(c *gin.Context) ([]interface{}, error) {
 	return prescriptions, nil
 }
 
-// func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string) (map[string]interface{}, error) {
+func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string) (map[string]interface{}, error) {
 
-// 	intFields := []string{"dosagePerFrequency", "noOfDays"}
-// 	for _, field := range intFields {
-// 		number, ok := data[field].(float64)
-// 		if !ok {
-// 			log.Println("Field not in integer format ")
-// 			return nil, errors.New("Field not in integer format: " + field)
-// 		}
-// 		data[field] = int(number)
-// 	}
-// 	err := trimIfExists(data, "instructions")
-// 	if err != nil {
-// 		log.Println("Error from trimIfExists")
-// 		return nil, err
-// 	}
-// 	if freq, exists := data["frequency"]; exists {
-// 		f, okay := freq.(map[string]interface{})
-// 		if !okay {
-// 			log.Println("frequency field must be object")
-// 			return nil, errors.New("frequency field must be object")
-// 		}
-// 		fields := []string{"morning", "afternoon", "night"}
-// 		for _, field := range fields {
-// 			if val, ok := f[field]; ok {
-// 				boolean, ok := val.(bool)
-// 				if !ok {
-// 					log.Printf("Frequency %s must be true/false", field)
-// 					return nil, fmt.Errorf("Frequency %s must be true/false", field)
-// 				}
-// 				f[field] = boolean
-// 			}
-// 		}
-// 		data["frequency"] = f
-// 	}
-// 	data["updatedBy"] = doctorId
-// 	return data, nil
-// }
-// func UpdatePrescription(c *gin.Context, prescriptionId string, medicineRecordId string, data map[string]interface{}) (string, error) {
-// 	doctorId, err := GetFromContext[string](c, "code")
-// 	if err != nil {
-// 		log.Println("Error from getFromContext: ", err)
-// 		return "", err
-// 	}
-// 	data, err = ValidateUpdatePrescriptionData(data, doctorId)
-// 	coll := prescriptionCollection
-// 	collection := db.OpenCollections(coll)
-// 	filter := bson.M{
-// 		"code": prescriptionId,
-// 		"medicines":
-// 	}
-// 	result := make(map[string]interface{})
-// 	err = db.FindOne(c, collection, filter, result)
-// 	if err != nil {
-// 		log.Println("Error from findOne: ", err)
-// 		return "", err
-// 	}
-// 	docFromPrescriptionVal, ok := result["createdBy"]
-// 	if !ok {
-// 		log.Println("createdBy(doctor) field doesnot exists in prescription")
-// 		return "", errors.New("createdBy(doctor) field doesnot exists in prescription")
-// 	}
-// 	if doctorId != docFromPrescriptionVal.(string) {
-// 		log.Println("This doctor doesnot have access")
-// 		return "", errors.New("This doctor doesnot have access")
-// 	}
-// 	update := bson.M{
-// 		"$set": data,
-// 	}
-// 	updated, err := db.UpdateOne(c, collection, filter, update)
-// 	if err != nil {
-// 		log.Println("Error from updateOne: ", err)
-// 		return "", err
-// 	}
-// 	log.Println("Updated prescription count: ", updated.ModifiedCount)
-// 	refreshCache(c, coll, prescriptionId, data)
-// 	return "updated successfully", nil
-// }
+	Fields := []string{"instructions", "dosagePerFrequency", "noOfDays"}
+	for _, field := range Fields {
+		err := trimIfExists(data, field)
+		if err != nil {
+			log.Println("Error from trimIfExists: ", err)
+			return nil, err
+		}
+	}
+	if freq, exists := data["frequency"]; exists {
+		f, okay := freq.(map[string]interface{})
+		if !okay {
+			log.Println("frequency field must be object")
+			return nil, errors.New("frequency field must be object")
+		}
+		fields := []string{"morning", "afternoon", "night"}
+		for _, field := range fields {
+			if val, ok := f[field]; ok {
+				boolean, ok := val.(bool)
+				if !ok {
+					log.Printf("Frequency %s must be true/false", field)
+					return nil, fmt.Errorf("Frequency %s must be true/false", field)
+				}
+				f[field] = boolean
+			}
+		}
+		data["frequency"] = f
+	}
+	data["updatedBy"] = doctorId
+	data["updatedAt"] = time.Now()
+	return data, nil
+}
+func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string, data map[string]interface{}) (string, error) {
+	doctorId, err := GetFromContext[string](c, "code")
+	if err != nil {
+		log.Println("Error from getFromContext: ", err)
+		return "", err
+	}
+	err = trimIfExists(data, "diagnosis")
+	if err != nil {
+		log.Println("Error from trimIfExists: ", err)
+		return "", err
+	}
+	data, err = ValidateUpdatePrescriptionData(data, doctorId)
+	if err != nil {
+		log.Println("Error from validateUpdatePrescriptionData: ", err)
+		return "", err
+	}
+	coll := prescriptionCollection
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code":                 prescriptionId,
+		"medicines.medicineId": medicineId,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	docFromPrescriptionVal, ok := result["createdBy"]
+	if !ok {
+		log.Println("createdBy(doctor) field doesnot exists in prescription")
+		return "", errors.New("createdBy(doctor) field doesnot exists in prescription")
+	}
+	if doctorId != docFromPrescriptionVal.(string) {
+		log.Println("This doctor doesnot have access")
+		return "", errors.New("This doctor doesnot have access")
+	}
+	update := bson.M{
+		"$set": data,
+	}
+	updated, err := db.UpdateOne(c, collection, filter, update)
+	if err != nil {
+		log.Println("Error from updateOne: ", err)
+		return "", err
+	}
+	log.Println("Updated prescription count: ", updated.ModifiedCount)
+	err = db.FindOne(c, collection, filter, result)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	key := util.PrescriptionKey + prescriptionId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache: ", err)
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache: ", err)
+	}
+	return "updated successfully", nil
+}
