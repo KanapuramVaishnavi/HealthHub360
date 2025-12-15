@@ -3,7 +3,6 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
-	"HealthHub360/nats"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -497,17 +496,17 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		log.Println("Error from setCache : ", cacheErr)
 		return "", cacheErr
 	}
-	if err := nats.PublishAppointmentCreated(
-		appCode,
-		doctorId,
-		data["patientId"].(string),
-		dateModified,
-		data["time"].(string),
-		data["phoneNo"].(string),
-	); err != nil {
-		log.Println("Error publishing appointment.created event:", err)
-		// do not return error, booking already succeeded
-	}
+	// if err := nats.PublishAppointmentCreated(
+	// 	appCode,
+	// 	doctorId,
+	// 	data["patientId"].(string),
+	// 	dateModified,
+	// 	data["time"].(string),
+	// 	data["phoneNo"].(string),
+	// ); err != nil {
+	// 	log.Println("Error publishing appointment.created event:", err)
+	// 	// do not return error, booking already succeeded
+	// }
 
 	return "created Successfully", nil
 }
