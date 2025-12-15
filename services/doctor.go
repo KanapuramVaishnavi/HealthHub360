@@ -16,7 +16,7 @@ import (
 * Validate user inputs first
 * Fetch collection name from the roleCode given
 * Check the fields and Generate a code and then createdBy
-* Fetch tenantId from the hospital collection
+* Fetch tenantId from context
 * Include tenantId and generate otp and hash the otp
 * Combine all the remaining data and prepare it
 * Save to db and cache
@@ -90,7 +90,9 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 /*
 * If fields provided,trim them and append to the input data
 * Get the code from claims which is createdBy field
-* Update based on the update and search filters
+* Update based on the search filters and update fields
+* Fetch updated document
+* Delete from cache, set in Cache
  */
 func UpdateDoctor(c *gin.Context, data map[string]interface{}, doctorId string) (string, error) {
 	log.Println("doctorId: ", doctorId)
@@ -104,15 +106,22 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, doctorId string) 
 	if err := handleDOB(data); err != nil {
 		return "", err
 	}
+
+	collection := db.OpenCollections(doctorCollection)
+	err := CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
+
 	code := c.GetString("code")
 	updateFilter := BuildUpdateFilter(data, code)
 	filter := bson.M{
 		"code": doctorId,
 	}
-	collection := db.OpenCollections(doctorCollection)
 	doctor := make(map[string]interface{})
 
-	err := db.FindOne(c, collection, filter, &doctor)
+	err = db.FindOne(c, collection, filter, &doctor)
 	if err != nil {
 		log.Println("Error from the findOne function: ", err)
 		return "", err
@@ -153,11 +162,12 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, doctorId string) 
 }
 
 /*
-* Create a key to fetch from cache
-* Fetch from cache if found then extract tenantId and compare with the input tenantId
+* isSuperAdmin,tenantId,collection and code from context
+* Pass those fields and key fetch from cache
+* If exists,check who can access(superAdmin,tenantAdmin,hospitalAdmin)
 * If not found go to db search for the document
-* Check whether the tenantId matches with the input tenantId
-* If comparision works then return the docs
+* Search the doument, check who can access doctor
+* If comparision works then return the doctor
  */
 func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{}, error) {
 	coll := doctorCollection
@@ -224,7 +234,9 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 
 /*
 * Make a filter
-* FindAll from the above filter
+* According to the user,the filter condition changes
+* Search for listOfDoctors
+* Return them
  */
 func FetchAllDoctors(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
@@ -259,10 +271,10 @@ func FetchAllDoctors(c *gin.Context) ([]interface{}, error) {
 }
 
 /*
-* Get code from the token
-* Compare code with the createdBy from the result document found from filter
-* If comparision works well go for the delete
-* If not return no another hospital admin can have access to delete it
+* Build filter to search based on doctorId
+* If found with the field createdBy from the result document found from document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not no another hospital admin can have access to delete it
  */
 func DeleteDoctor(c *gin.Context, doctorId string) (string, error) {
 	collection := db.OpenCollections(doctorCollection)

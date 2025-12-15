@@ -132,28 +132,28 @@ func PrepareRole(c *gin.Context, data map[string]interface{}, roleName string, p
 * CreateOne create the document in the respective db provided
  */
 
-func CreateRole(c *gin.Context, data map[string]interface{}) (map[string]interface{}, error) {
+func CreateRole(c *gin.Context, data map[string]interface{}) (string, error) {
 	roleName, privileges, err := ValidateRoleData(data)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	data, err = PrepareRole(c, data, roleName, privileges)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	collection := db.OpenCollections(RoleCollection)
 	_, err = db.CreateOne(c, collection, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert role: %v", err)
+		return "", fmt.Errorf("failed to insert role: %v", err)
 	}
 
 	key := util.RoleKey + data["roleCode"].(string)
 	if err := redis.SetCache(c, key, data); err != nil {
-		return nil, fmt.Errorf("failed to cache role: %v", err)
+		return "", fmt.Errorf("failed to cache role: %v", err)
 	}
-
-	return data, nil
+	log.Println("data: ", data)
+	return "Role created successfully", nil
 }
 
 /*

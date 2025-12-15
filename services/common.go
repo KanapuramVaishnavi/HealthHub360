@@ -145,6 +145,12 @@ func IsPhoneNumberExists(collName string, phone string) (bool, error) {
 	}
 	return count > 0, nil
 }
+
+/*
+* Check whether key exists in data
+* Check for the type of data, and value stored at the field
+* Trim and store in data
+ */
 func getTrimmedString(data map[string]interface{}, key string) error {
 	raw, exists := data[key]
 	if !exists {
@@ -380,6 +386,11 @@ func Checker(Email string, Phone string, collName string) error {
 	return nil
 }
 
+/*
+* check for mandatory fields exists or not
+* If not return error,else check for the type of field stored
+* Trim and append to data
+ */
 func ValidateUserInput(data map[string]interface{}) error {
 	fields := []string{"name", "email", "phoneNo", "dob", "roleCode"}
 	for _, f := range fields {
@@ -702,4 +713,29 @@ func checkCacheAccess(c *gin.Context, key string, collFromContext string, userDa
 	}
 
 	return cached, true, nil
+}
+
+func CheckForEmailAndPhoneNo(c *gin.Context, collection *mongo.Collection, data map[string]interface{}) error {
+	fields := []string{"email", "phoneNo"}
+	for _, fieldName := range fields {
+		fieldVal, ok := data[fieldName]
+		if ok {
+			fieldStr, ok := fieldVal.(string)
+			filter := bson.M{
+				fieldName: fieldStr,
+			}
+			result := make(map[string]interface{})
+			if ok {
+				err := db.FindOne(c, collection, filter, &result)
+				if err == nil {
+					return fmt.Errorf("%s already exists in db", fieldName)
+				}
+				if err != mongo.ErrNoDocuments {
+					return err
+				}
+			}
+		}
+
+	}
+	return nil
 }

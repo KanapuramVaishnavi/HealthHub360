@@ -66,13 +66,13 @@ and move into services
 func UpdateTenant(c *gin.Context) {
 	code := c.Param("code")
 
-	var body map[string]interface{}
-	if err := c.BindJSON(&body); err != nil {
+	var data map[string]interface{}
+	if err := c.BindJSON(&data); err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
 
-	updated, err := services.UpdateTenantByCode(c, code, body)
+	updated, err := services.UpdateTenantByCode(c, code, data)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

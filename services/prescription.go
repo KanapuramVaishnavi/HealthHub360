@@ -300,3 +300,41 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 	}
 	return "updated successfully", nil
 }
+
+func DeletePrescriptionByCode(c *gin.Context, prescripitonId string) (string, error) {
+	collection := db.OpenCollections(prescriptionCollection)
+	doctorId, ok := c.Get("code")
+	if !ok {
+		return "", errors.New("unable to fetch code from context")
+	}
+	filter := bson.M{
+		"code": prescripitonId,
+	}
+
+	log.Println(filter)
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from the findOne function:", err)
+		return "", err
+
+	}
+	if doctorId.(string) != result["createdBy"].(string) {
+		log.Println("This user doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from the deleteOne function: ", err)
+		return "", err
+	}
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.PrescriptionKey + prescripitonId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache:", err)
+		return "", err
+	}
+	msg := fmt.Sprintf("User %s deleted successfuly ", prescripitonId)
+	return msg, nil
+}

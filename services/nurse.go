@@ -16,7 +16,7 @@ import (
 * Validate user inputs first
 * Fetch collection name from the roleCode given
 * Check the fields and Generate a code and then createdBy
-* Fetch tenantId from the hospital collection
+* Fetch tenantId from context
 * Include tenantId and generate otp and hash the otp
 * Combine all the remaining data and prepare it
 * Save to db and cache
@@ -86,7 +86,9 @@ func CreateNurse(c *gin.Context, data map[string]interface{}) (string, error) {
 /*
 * If fields provided,trim them and append to the input data
 * Get the code from claims which is createdBy field
-* Update based on the update and search filters
+* Update based on the search filters and update fields
+* Fetch updated document
+* Delete from cache, set in Cache
  */
 func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (string, error) {
 	fields := []string{"name", "email", "phoneNo"}
@@ -100,14 +102,21 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (s
 		return "", err
 	}
 
+	collection := db.OpenCollections(nurseCollection)
+	err := CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
+
 	code := c.GetString("code")
 	updateFilter := BuildUpdateFilter(data, code)
 	filter := bson.M{
 		"code": nurseId,
 	}
-	collection := db.OpenCollections(nurseCollection)
 	nurse := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, &nurse)
+
+	err = db.FindOne(c, collection, filter, &nurse)
 	if err != nil {
 		log.Println("Error from the findOne function", err)
 		return "", err
@@ -146,8 +155,11 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (s
 }
 
 /*
-It gives the all the nurses on the databse
-*/
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfNurse
+* Return them
+ */
 func FetchAllNurses(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -182,11 +194,12 @@ func FetchAllNurses(c *gin.Context) ([]interface{}, error) {
 }
 
 /*
-* Create a key to fetch from cache
-* Fetch from cache if found then extract tenantId and compare with the input tenantId
+* isSuperAdmin,tenantId,collection and code from context
+* Pass those fields and key fetch from cache
+* If exists,check who can access(superAdmin,tenantAdmin,hospitalAdmin)
 * If not found go to db search for the document
-* Check whether the tenantId matches with the input tenantId
-* If comparision works then return the docs
+* Search the doument, check who can access nurse
+* If comparision works then return the nurse
  */
 func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, error) {
 
@@ -252,8 +265,11 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 }
 
 /*
-Delete Nurse By code where it matchs the code of the given parameters
-*/
+* Build filter to search based on nurseId
+* If found with the field createdBy from the result document found from document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not no another hospital admin can have access to delete it
+ */
 func DeleteNurseByCode(c *gin.Context, nurseId string) (string, error) {
 	collection := db.OpenCollections(nurseCollection)
 	hospitalCodeRaw, ok := c.Get("code")

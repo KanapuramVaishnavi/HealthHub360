@@ -152,15 +152,19 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId stri
 		log.Println("Error from handlDOB: ", err)
 		return err
 	}
-
+	collection := db.OpenCollections(hospitalCollection)
+	err := CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return err
+	}
 	tenantId := c.GetString("code")
 	updateFilter := BuildUpdateFilter(data, tenantId)
 	filter := bson.M{
 		"code": hospitalId,
 	}
-	collection := db.OpenCollections(hospitalCollection)
 	value := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, &value)
+	err = db.FindOne(c, collection, filter, &value)
 	if err != nil {
 		log.Println("Error from the findOne function", err)
 		return err
@@ -177,7 +181,7 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId stri
 		return err
 	}
 
-	log.Println(res.ModifiedCount)
+	log.Println("modifiedCount: ", res.ModifiedCount)
 
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
@@ -199,8 +203,10 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId stri
 }
 
 /*
-* Get code from params
-* Fetch from db
+* Check for whether the hospitalAmdin exists or not
+* SuperAdmin,tenant only have access to fetch hospitalAdmin
+* Check in cache,if exists return hospitalAdmin
+* If not exists,search in database and set in cache
  */
 func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interface{}, error) {
 	coll := hospitalCollection
@@ -262,6 +268,11 @@ func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interfac
 	return result, nil
 }
 
+/*
+* Fetch all hospitals from database
+* Fetch hospitals can be only viewed by either superAdmin nor Tenant
+* Return all hospitals for the filter
+ */
 func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 	collection := db.OpenCollections(hospitalCollection)
 	code := c.GetString("code")
@@ -279,16 +290,22 @@ func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("Invalid user to access ")
-		return nil, errors.New("Invalida user to access")
+		return nil, errors.New("Invalid user to access")
 	}
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
 		return nil, err
 	}
+	log.Println("hospitals: ", doc)
 	return doc, nil
 }
 
+/*
+* Fetch hospital based on provided id
+* If exists ,only tenna can delete the hospitalAdmin
+* Delete from database as well as in cache also
+ */
 func DeleteHospitalByCode(c *gin.Context, hospitalId string) (string, error) {
 	collection := db.OpenCollections(hospitalCollection)
 	tenantId, ok := c.Get("code")
@@ -300,7 +317,7 @@ func DeleteHospitalByCode(c *gin.Context, hospitalId string) (string, error) {
 	}
 	log.Println(filter)
 	result := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, result)
+	err := db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from the findOne function:", err)
 		return "", err

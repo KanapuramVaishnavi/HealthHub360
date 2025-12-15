@@ -691,3 +691,41 @@ func BuildUPIString(upiID, name string, amount int) string {
 		amount,
 	)
 }
+
+func DeleteBillByCode(c *gin.Context, billId string) (string, error) {
+	collection := db.OpenCollections(BillCollection)
+	pharmacistId, ok := c.Get("code")
+	if !ok {
+		return "", errors.New("unable to fetch code from context")
+	}
+	filter := bson.M{
+		"code": billId,
+	}
+
+	log.Println(filter)
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from the findOne function:", err)
+		return "", err
+
+	}
+	if pharmacistId.(string) != result["createdBy"].(string) {
+		log.Println("This user doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from the deleteOne function: ", err)
+		return "", err
+	}
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.BillKey + billId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache:", err)
+		return "", err
+	}
+	msg := fmt.Sprintf("User %s deleted successfuly ", billId)
+	return msg, nil
+}

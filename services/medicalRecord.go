@@ -5,6 +5,7 @@ import (
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -255,43 +256,6 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 	return nil
 }
 
-// func UpdateMedicalRecordByReceptionist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
-
-// 	fields := []string{"doctorId", "nurseId", "patientId", "reason"}
-// 	for _, f := range fields {
-// 		if err := trimIfExists(data, f); err != nil {
-// 			log.Println("Error from trimIfExists")
-// 			return err
-// 		}
-// 	}
-// 	createdByVal, ok := c.Get("code")
-// 	if !ok {
-// 		log.Println("unable to fetch code from context")
-// 		return errors.New("unable to fetch code from context")
-// 	}
-// 	createdBy, ok := createdByVal.(string)
-// 	if !ok {
-// 		log.Println("unable to convert into string")
-// 		return errors.New("unable to convert into string")
-// 	}
-
-//		collection := db.OpenCollections(medicalRecordCollection)
-//		data["updatedAt"] = time.Now()
-//		data["UpdatedBy"] = createdBy
-//		filter := bson.M{
-//			"code": medicalRecordId,
-//		}
-//		update := bson.M{
-//			"$set": data,
-//		}
-//		updated, err := db.UpdateOne(c, collection, filter, update)
-//		if err != nil {
-//			log.Println("Error while updating medicalRecord by Receptionist:", err)
-//			return err
-//		}
-//		log.Println("Updated: ", updated.ModifiedCount)
-//		return nil
-//	}
 func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string]interface{}) (string, error) {
 	val := ""
 	collectionVal, ok := c.Get("collection")
@@ -385,4 +349,42 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 		return nil, err
 	}
 	return doc, nil
+}
+
+func DeleteMedicalRecordByCode(c *gin.Context, medicalRecordId string) (string, error) {
+	collection := db.OpenCollections(medicalRecordCollection)
+	receptionistId, ok := c.Get("code")
+	if !ok {
+		return "", errors.New("unable to fetch code from context")
+	}
+	filter := bson.M{
+		"code": medicalRecordId,
+	}
+
+	log.Println(filter)
+	result := make(map[string]interface{})
+	err := db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from the findOne function:", err)
+		return "", err
+
+	}
+	if receptionistId.(string) != result["createdBy"].(string) {
+		log.Println("This user doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
+	if err != nil {
+		log.Println("Error from the deleteOne function: ", err)
+		return "", err
+	}
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.MedicalRecordKey + medicalRecordId
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deleteCache:", err)
+		return "", err
+	}
+	msg := fmt.Sprintf("User %s deleted successfuly ", medicalRecordId)
+	return msg, nil
 }

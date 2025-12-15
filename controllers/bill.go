@@ -14,6 +14,7 @@ func Bill(router *gin.Engine) {
 	bill.POST("/create/:code", authorization.Authorize("bill", "create"), CreateBill)
 	bill.GET("/fetch/:code", authorization.Authorize("bill", "view"), FetchBillByCode)
 	bill.GET("/generate/:patientId", GenerateBillingReport)
+	bill.DELETE("/delete/:billId", authorization.Authorize("bill", "delete"), DeleteBillByCode)
 }
 func CreateBill(c *gin.Context) {
 	patientId := c.Param("code")
@@ -47,4 +48,14 @@ func GenerateBillingReport(c *gin.Context) {
 	}
 	log.Println(response)
 	c.JSON(200, util.SuccessResponse(response))
+}
+
+func DeleteBillByCode(c *gin.Context) {
+	billId := c.Param("billId")
+	data, err := services.DeleteBillByCode(c, billId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(data))
 }

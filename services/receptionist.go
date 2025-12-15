@@ -13,10 +13,15 @@ import (
 )
 
 /*
-It will Create receptionist by making certain validatiosn by generating the code
-and fetching tennatid from the hospitaldoc
-reespectively .Finally it sent email to the respected person states that validation is completed
-*/
+* Validate user inputs first
+* Fetch collection name from the roleCode given
+* Check the fields and Generate a code and then createdBy
+* Fetch tenantId from the context
+* Include tenantId and generate otp and hash the otp
+* Combine all the remaining data and prepare it
+* Save to db and cache
+* Send mail
+ */
 func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 	err := ValidateUserInput(body)
 	if err != nil {
@@ -79,11 +84,12 @@ func CreateReceptionist(ctx *gin.Context, body map[string]interface{}) error {
 }
 
 /*
-* Create a key to fetch from cache
-* Fetch from cache if found then extract tenantId and compare with the input tenantId
+* isSuperAdmin,tenantId,collection and code from context
+* Pass those fields and key fetch from cache
+* If exists,check who can access(superAdmin,tenantAdmin,hospitalAdmin)
 * If not found go to db search for the document
-* Check whether the tenantId matches with the input tenantId
-* If comparision works then return the docs
+* Search the doument, check who can access receptionist
+* If comparision works then return the receptionist
  */
 func FetchReceptionistByCode(c *gin.Context, receptionistId string) (map[string]interface{}, error) {
 
@@ -154,8 +160,11 @@ func FetchReceptionistByCode(c *gin.Context, receptionistId string) (map[string]
 }
 
 /*
-It gives the all the receptionist on the database
-*/
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfReceptionist
+* Return them
+ */
 func FetchAllReceptionist(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -191,7 +200,9 @@ func FetchAllReceptionist(c *gin.Context) ([]interface{}, error) {
 /*
 * If fields provided,trim them and append to the input data
 * Get the code from claims which is createdBy field
-* Update based on the update and search filters
+* Update based on the search filters and update fields
+* Fetch updated document
+* Delete from cache, set in Cache
  */
 func UpdateReceptionist(c *gin.Context, data map[string]interface{}, receptionistId string) (string, error) {
 	fields := []string{"name", "email", "phoneNo"}
@@ -205,15 +216,21 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, receptionis
 		return "", err
 	}
 
+	collection := db.OpenCollections(receptionistCollection)
+	err := CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
+
 	code := c.GetString("code")
 	updateFilter := BuildUpdateFilter(data, code)
 	filter := bson.M{
 		"code": receptionistId,
 	}
-	collection := db.OpenCollections(receptionistCollection)
 	receptionist := make(map[string]interface{})
 
-	err := db.FindOne(c, collection, filter, &receptionist)
+	err = db.FindOne(c, collection, filter, &receptionist)
 	if err != nil {
 		log.Println("Error from the findOne function: ", err)
 		return "", err
@@ -249,6 +266,12 @@ func UpdateReceptionist(c *gin.Context, data map[string]interface{}, receptionis
 	return "Updated Successfully", nil
 }
 
+/*
+* Build filter to search based on receptionistId
+* If found with the field createdBy from the result document found from document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not no another hospital admin can have access to delete it
+ */
 func DeleteReceptionist(c *gin.Context, receptionistId string) (string, error) {
 	collection := db.OpenCollections(receptionistCollection)
 	hospitalCodeRaw, ok := c.Get("code")

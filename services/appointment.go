@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/nats"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -496,6 +497,18 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		log.Println("Error from setCache : ", cacheErr)
 		return "", cacheErr
 	}
+	if err := nats.PublishAppointmentCreated(
+		appCode,
+		doctorId,
+		data["patientId"].(string),
+		dateModified,
+		data["time"].(string),
+		data["phoneNo"].(string),
+	); err != nil {
+		log.Println("Error publishing appointment.created event:", err)
+		// do not return error, booking already succeeded
+	}
+
 	return "created Successfully", nil
 }
 
@@ -717,35 +730,41 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 	return doc, nil
 }
 
-func DeleteAppointmentByCode(c *gin.Context, code string) (string, error) {
+func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, error) {
 	collection := db.OpenCollections(appointmentCollection)
-	ReceptionestCode, ok := c.Get("code")
+	receptionistId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")
 	}
 	filter := bson.M{
-		"createdBy": ReceptionestCode,
+		"code": appointmentId,
 	}
+
 	log.Println(filter)
 	result := make(map[string]interface{})
-	err := db.FindOne(c, collection, filter, result)
+	err := db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from the findOne function:", err)
 		return "", err
 
 	}
-	_, err = db.DeleteOne(c, collection, filter)
+	if receptionistId.(string) != result["createdBy"].(string) {
+		log.Println("This user doesnot have access")
+		return "", errors.New("This user doesnot have access")
+	}
+	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
 		log.Println("Error from the deleteOne function: ", err)
 		return "", err
 	}
-	key := util.AppointmentKey + code
+	log.Println("Deleted: ", deleted.DeletedCount)
+	key := util.AppointmentKey + appointmentId
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		log.Println("Error from deleteCache:", err)
 		return "", err
 	}
-	msg := fmt.Sprintf("User %s deleted successfuly ", code)
+	msg := fmt.Sprintf("User %s deleted successfuly ", appointmentId)
 	return msg, nil
 }
 
@@ -765,11 +784,16 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 	collFromContext := c.GetString("collection")
 	data["updatedAt"] = time.Now()
 	appColl := db.OpenCollections(appointmentCollection)
+	err := CheckForEmailAndPhoneNo(c, appColl, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
 	Filter := bson.M{
 		"code": appointmentId,
 	}
 	appointment := make(map[string]interface{})
-	err := db.FindOne(c, appColl, Filter, &appointment)
+	err = db.FindOne(c, appColl, Filter, &appointment)
 	if err != nil {
 		log.Println("Error while fetching medicalRecord(FindOne)", err)
 		return "", err

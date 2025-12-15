@@ -75,6 +75,11 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 	return nil
 }
 
+/*
+* Get tenant from cache,if exists return tenant
+* If not exists,fetch tenant from dataBase
+* Set in Cache
+ */
 func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{}, error) {
 	superAdminId, err := GetFromContext[string](c, "code")
 	if err != nil {
@@ -120,7 +125,7 @@ func FetchAllTenants(c *gin.Context) ([]interface{}, error) {
 	if err != nil {
 		return []interface{}{}, err
 	}
-	log.Println("tenats are", results)
+	log.Println("tenants are", results)
 	return results, nil
 }
 
@@ -136,36 +141,40 @@ Workflow:
 6. Refresh cache (delete old → write new)
 7. Return updated tenant document
 */
-func UpdateTenantByCode(c *gin.Context, code string, updateData map[string]interface{}) (string, error) {
+func UpdateTenantByCode(c *gin.Context, tenantId string, data map[string]interface{}) (string, error) {
 
-	if strings.TrimSpace(code) == "" {
-		return "", errors.New("tenant code required")
-	}
-
-	_, err := fetchExistingTenant(code)
-	if err != nil {
-		log.Println("Error from fetchExistingTenant: ", err)
-		return "", err
-	}
-
-	updateFields, err := parseTenantUpdateFields(c, updateData)
+	updateFields, err := parseTenantUpdateFields(c, data)
 	if err != nil {
 		log.Println("Error from parseTenantUpdateFields: ", err)
 		return "", err
 	}
-
-	err = updateTenantInDB(code, updateFields)
+	collection := db.OpenCollections(TenantCollection)
+	err = CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
+	filter := bson.M{
+		"code": tenantId,
+	}
+	tenant := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, &tenant)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	err = updateTenantInDB(tenantId, updateFields)
 	if err != nil {
 		log.Println("Error from updateTenantInDB: ", err)
 		return "", err
 	}
-
-	updatedTenant, err := fetchExistingTenant(code)
+	updatedTenant := make(map[string]interface{})
+	err = db.FindOne(c, collection, filter, &updatedTenant)
 	if err != nil {
-		log.Println("Error from fetchExistingTenant: ", err)
+		log.Println("Error from findOne: ", err)
 		return "", err
 	}
-	key := util.TenantKey + code
+	key := util.TenantKey + tenantId
 	if err := redis.DeleteCache(c, key); err != nil {
 		log.Println("Failed deleting old tenant cache:", err)
 	}
@@ -175,24 +184,6 @@ func UpdateTenantByCode(c *gin.Context, code string, updateData map[string]inter
 	}
 
 	return "Updated successfully", nil
-}
-
-/*
-fetchExistingTenant retrieves a tenant document by code from MongoDB.
-Returns error if tenant not found.
-*/
-func fetchExistingTenant(code string) (map[string]interface{}, error) {
-
-	collection := db.OpenCollections(TenantCollection)
-	filter := bson.M{"code": code}
-
-	var existing map[string]interface{}
-	err := db.FindOne(context.Background(), collection, filter, &existing)
-	if err != nil {
-		return nil, errors.New("tenant not found")
-	}
-
-	return existing, nil
 }
 
 /*

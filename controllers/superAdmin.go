@@ -12,9 +12,8 @@ import (
 func SuperAdmin(router *gin.Engine) {
 	superAdmin := router.Group("/superAdmin")
 	{
-		superAdmin.GET("/fetch", authorization.Authorize("superAdmin", "view"), ReadSuperAdmin)
-		superAdmin.PUT("/update", authorization.Authorize("superAdmin", "update"), UpdateSuperAdmin)
-		superAdmin.DELETE("/delete", authorization.Authorize("superAdmin", "delete"), DeleteSuperAdmin)
+		superAdmin.GET("/fetch/:superAdminId", authorization.Authorize("superAdmin", "view"), FetchSuperAdminByCode)
+		superAdmin.PUT("/update/:superAdminId", authorization.Authorize("superAdmin", "update"), UpdateSuperAdmin)
 	}
 }
 
@@ -33,8 +32,9 @@ func CreateSuperAdmin(ctx *gin.Context) {
 	ctx.JSON(200, util.SuccessResponse("Created successfully"))
 }
 
-func ReadSuperAdmin(ctx *gin.Context) {
-	user, err := services.ReadSuperAdmin(ctx)
+func FetchSuperAdminByCode(ctx *gin.Context) {
+	superAdminId := ctx.Param("superAdminId")
+	user, err := services.FetchSuperAdminByCode(ctx, superAdminId)
 	if err != nil {
 		ctx.JSON(400, util.FailedResponse(err))
 		return
@@ -42,22 +42,14 @@ func ReadSuperAdmin(ctx *gin.Context) {
 	ctx.JSON(200, util.SuccessResponse(user))
 }
 
-func DeleteSuperAdmin(ctx *gin.Context) {
-	err := services.DeleteSuperAdmin(ctx)
-	if err != nil {
-		ctx.JSON(400, util.FailedResponse(err))
-		return
-	}
-	ctx.JSON(200, util.SuccessResponse("Deleted successfully"))
-
-}
 func UpdateSuperAdmin(ctx *gin.Context) {
-	var body map[string]interface{}
-	if err := ctx.BindJSON(&body); err != nil {
+	var data map[string]interface{}
+	if err := ctx.BindJSON(&data); err != nil {
 		ctx.JSON(400, util.FailedResponse(err))
 		return
 	}
-	err := services.UpdateSuperAdmin(ctx, body)
+	superAdminId := ctx.Param("superAdminId")
+	err := services.UpdateSuperAdmin(ctx, superAdminId, data)
 	if err != nil {
 		ctx.JSON(400, util.FailedResponse(err))
 		return

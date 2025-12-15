@@ -23,6 +23,7 @@ func Routes(r *gin.Engine) {
 	controllers.Nurse(r)
 	controllers.Pharmacist(r)
 	controllers.Patient(r)
+	controllers.Guardian(r)
 	controllers.MedicalRecord(r)
 	controllers.Medicines(r)
 	controllers.Appointment(r)

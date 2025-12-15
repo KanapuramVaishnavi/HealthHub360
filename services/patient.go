@@ -70,6 +70,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 			log.Println("Error from validateConsentAndCreate: ", err)
 			return val, err
 		}
+		delete(data, "guardians")
 	}
 	log.Println("ListOfGuardians: ", listOfGuardians)
 	data["listOfGuardians"] = listOfGuardians
@@ -121,7 +122,7 @@ func FetchGuardiansFromData(data map[string]interface{}) ([]interface{}, error) 
 }
 
 func ValidateGuardianFields(guardian map[string]interface{}) (map[string]interface{}, error) {
-	requiredFields := []string{"name", "dob", "phoneNo", "mail", "govtId", "relation", "roleCode"}
+	requiredFields := []string{"name", "dob", "phoneNo", "email", "govtId", "relation", "roleCode"}
 	for _, field := range requiredFields {
 		err := getTrimmedString(guardian, field)
 		if err != nil {
@@ -326,38 +327,38 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 /*
 Here the Validation of the patient will happenn(CONSENT) Validation is done here
 */
-func ValidateGuardianConsent(data map[string]interface{}, age int) error {
-	raw, ok := data["consent"]
-	if !ok {
-		return errors.New("minor patient requires at least one guardian")
-	}
+// func ValidateGuardianConsent(data map[string]interface{}, age int) error {
+// 	raw, ok := data["consent"]
+// 	if !ok {
+// 		return errors.New("minor patient requires at least one guardian")
+// 	}
 
-	consent, ok := raw.([]interface{})
-	if !ok || len(consent) == 0 {
-		return errors.New("minor patient requires at least one guardian consent")
-	}
+// 	consent, ok := raw.([]interface{})
+// 	if !ok || len(consent) == 0 {
+// 		return errors.New("minor patient requires at least one guardian consent")
+// 	}
 
-	if len(consent) > 2 {
-		return errors.New("only up to two guardians are allowed")
-	}
+// 	if len(consent) > 2 {
+// 		return errors.New("only up to two guardians are allowed")
+// 	}
 
-	for i, g := range consent {
-		guardian, ok := g.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("guardian %d is invalid", i+1)
-		}
+// 	for i, g := range consent {
+// 		guardian, ok := g.(map[string]interface{})
+// 		if !ok {
+// 			return fmt.Errorf("guardian %d is invalid", i+1)
+// 		}
 
-		required := []string{"name", "phoneNo", "govId", "relation", "signature"}
-		for _, field := range required {
-			val, exists := guardian[field]
-			if !exists || val == "" {
-				return fmt.Errorf("guardian %d missing field: %s", i+1, field)
-			}
-		}
-	}
+// 		required := []string{"name", "phoneNo", "govId", "relation", "signature"}
+// 		for _, field := range required {
+// 			val, exists := guardian[field]
+// 			if !exists || val == "" {
+// 				return fmt.Errorf("guardian %d missing field: %s", i+1, field)
+// 			}
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{}, error) {
 
@@ -433,6 +434,11 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 	}
 	coll := patientCollection
 	collection := db.OpenCollections(coll)
+	err = CheckForEmailAndPhoneNo(c, collection, data)
+	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
+		return "", err
+	}
 
 	filter := bson.M{
 		"code": patientId,
@@ -524,16 +530,20 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 		return "", err
 	}
 	filter := bson.M{
-		"code":      patientId,
-		"createdBy": receptionistId,
+		"code": patientId,
 	}
 	coll := patientCollection
 	collection := db.OpenCollections(coll)
+	key := util.PatientKey + patientId
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne function", err)
+		log.Println("Error from findOne function", &err)
 		return "", err
+	}
+	if result["createdBy"].(string) != receptionistId {
+		log.Println("User doesnot have access")
+		return "", errors.New("User doesnot have access")
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
@@ -545,7 +555,9 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 		log.Println("This user doesnot have access")
 		return "", errors.New("This user doesnot have access")
 	}
-	key := util.PatientKey + patientId
-	redis.DeleteCache(c, key)
+	err = redis.DeleteCache(c, key)
+	if err != nil {
+		log.Println("Error from deletedCache: ", err)
+	}
 	return "Deleted successfully", nil
 }

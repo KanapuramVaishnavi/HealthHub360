@@ -14,6 +14,7 @@ func MedicalRecord(c *gin.Engine) {
 		medicalRecord.GET("/fetch/:medicalRecordId", authorization.Authorize("medicalRecord", "view"), FetchMedicalRecordByCode)
 		medicalRecord.GET("/fetchAll", authorization.Authorize("medicalRecord", "view"), FetchAllMedicalRecords)
 		medicalRecord.PATCH("/update/:medicalRecordId", authorization.Authorize("medicalRecord", "update"), UpdateMedicalRecord)
+		medicalRecord.DELETE("/delete/:medicalRecordId", authorization.Authorize("medicalRecord", "delete"), DeleteMedicalRecordByCode)
 	}
 }
 
@@ -49,4 +50,14 @@ func UpdateMedicalRecord(c *gin.Context) {
 		return
 	}
 	c.JSON(200, util.SuccessResponse(msg))
+}
+
+func DeleteMedicalRecordByCode(c *gin.Context) {
+	medicalRecordId := c.Param("medicalRecordId")
+	data, err := services.DeleteMedicalRecordByCode(c, medicalRecordId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(data))
 }

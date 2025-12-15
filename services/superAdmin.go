@@ -4,49 +4,14 @@ import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
 	"HealthHub360/util"
-	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
-
-/*
-PrepareSuperAdmin formats and validates SuperAdmin data.
-Normalizes the DOB, sets default fields, and populates metadata like timestamps.
-Used before inserting the record in the database.
-*/
-func PrepareSuperAdmin(input map[string]interface{}, name string, email string, code string, roleCode string) error {
-
-	dob, ok := input["dob"].(string)
-	if !ok {
-		return errors.New("DOB not provided")
-	}
-	modifiedDob, err := NormalizeDate(dob)
-	if err != nil {
-		return err
-	}
-
-	input["dob"] = modifiedDob
-	input["_id"] = primitive.NewObjectID()
-	input["code"] = code
-	input["roleCode"] = roleCode
-	input["loginAttempts"] = 0
-	input["token"] = ""
-	input["reset"] = true
-	input["isBlocked"] = false
-	input["isActive"] = false
-	input["createdAt"] = time.Now()
-	input["updatedAt"] = time.Now()
-
-	return nil
-}
 
 /*
 CreateSuperAdmin handles creating a SuperAdmin user.
@@ -60,6 +25,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
+
 	collection, err := FetchCollectionFromRoleDoc(c, input["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from FetchRoleDocAndCollection:", err)
@@ -70,13 +36,14 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 		log.Println("Error from GenerateUserCodes:", err)
 		return err
 	}
+
 	otp, err := GenerateAndHashOTP(input)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-
-	if err = PrepareUser(input, code, createdBy, ""); err != nil {
+	tenantId := ""
+	if err = PrepareUser(input, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
@@ -104,96 +71,89 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	log.Println("mail sent successfully")
 	return nil
 }
-func ReadSuperAdmin(c *gin.Context) ([]interface{}, error) {
+
+/*
+* Fetch superAdmin from cache using id ,if data exists
+* If doesnot exists in cache,fetch from dataBase
+ */
+func FetchSuperAdminByCode(c *gin.Context, superAdminId string) (map[string]interface{}, error) {
 	coll := db.OpenCollections(SuperAdminCollection)
-	data, err := db.FindAll(c, coll, bson.M{}, nil)
+	superAdmin := make(map[string]interface{})
+	key := util.SuperAdminKey + superAdminId
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(ctx, key, &cached)
+	if err == nil && exists {
+		log.Println("From cache: ", cached)
+		return cached, nil
+	}
+	filter := bson.M{
+		"code": superAdminId,
+	}
+	err = db.FindOne(c, coll, filter, &superAdmin)
 	if err != nil {
+		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	return data, nil
+	return superAdmin, nil
 }
 
-func UpdateSuperAdmin(c *gin.Context, update map[string]interface{}) error {
-	err := ValidateUserInput(update)
+/*
+* Validate input fields
+* Check for uniqueness of email and phoneNo
+* Fetch superAdmin ,update superAdmin
+* Delete and set in Cache
+ */
+func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]interface{}) error {
+	err := ValidateUserInput(data)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
-	updateFields, err := parseTenantUpdateFields(c, update)
+
+	if v, ok := data["dob"].(string); ok && strings.TrimSpace(v) != "" {
+		modDob, err := NormalizeDate(v)
+		if err != nil {
+			return errors.New("invalid dob format")
+		}
+		data["dob"] = modDob
+	}
+	collection := db.OpenCollections(SuperAdminCollection)
+	err = CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
+		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return err
 	}
-	doc, err := ReteriveDoc(c)
+	filter := bson.M{
+		"code": superAdminId,
+	}
+	result := make(map[string]interface{})
+	err = db.FindOne(ctx, collection, filter, &result)
 	if err != nil {
+		log.Println("Error from findOne: ", err)
 		return err
 	}
-	code := doc["code"].(string)
-	err = updateSuperAdminInDB(code, updateFields)
+	update := bson.M{
+		"$set": data,
+	}
+	updated, err := db.UpdateOne(c, collection, filter, update)
 	if err != nil {
+		log.Println("Error from updateOne: ", err)
 		return err
 	}
-	updatedDoc, err := ReteriveDoc(c)
+	log.Println("Updated: ", updated.ModifiedCount)
+	updatedSuperAdmin := make(map[string]interface{})
+	err = db.FindOne(ctx, collection, filter, &updatedSuperAdmin)
 	if err != nil {
+		log.Println("Error from findOne: ", err)
 		return err
 	}
-	key := util.SuperAdminKey + code
+	key := util.SuperAdminKey + superAdminId
 	if err := redis.DeleteCache(c, key); err != nil {
 		log.Println("Failed deleting old tenant cache:", err)
 	}
 
-	if err := redis.SetCache(c, key, updatedDoc); err != nil {
+	if err := redis.SetCache(c, key, updatedSuperAdmin); err != nil {
 		log.Println("Failed caching updated tenant:", err)
 	}
-	return nil
-}
-func ReteriveDoc(c *gin.Context) (map[string]interface{}, error) {
-	docs, err := ReadSuperAdmin(c)
-	if err != nil {
-		return nil, err
-	}
-	if len(docs) == 0 {
-		return nil, errors.New("no superadmin found")
-	}
-	doc, ok := docs[0].(map[string]interface{})
-	if !ok {
-		return nil, errors.New("DOCUMNET NIOT FOUND")
-	}
-	return doc, nil
-}
-func DeleteSuperAdmin(c *gin.Context) error {
-
-	raw := os.Getenv("COLLECTIONS")
-	parts := strings.Split(raw, ",")
-
-	for _, name := range parts {
-		name = strings.TrimSpace(name)
-
-		collection := db.OpenCollections(name)
-
-		res, err := db.DeleteMany(context.Background(), collection, bson.M{})
-		if err != nil {
-			log.Printf("Delete failed for collection %s: %v", name, err)
-			return err
-		}
-
-		log.Printf("Deleted %d docs from %s", res.DeletedCount, name)
-	}
-
-	return nil
-}
-
-/*
-updateSuperAdminInDB applies the parsed updates to the SuperAdmin document in MongoDB.
-*/
-func updateSuperAdminInDB(code string, update bson.M) error {
-
-	collection := db.OpenCollections(SuperAdminCollection)
-	filter := bson.M{"code": code}
-
-	_, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
-	if err != nil {
-		return fmt.Errorf("update failed: %v", err)
-	}
-
 	return nil
 }
