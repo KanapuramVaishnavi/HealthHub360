@@ -271,8 +271,12 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 		log.Println("This doctor doesnot have access")
 		return "", errors.New("This doctor doesnot have access")
 	}
+	updateFields := bson.M{}
+	for key, value := range data {
+		updateFields["medicines.$."+key] = value
+	}
 	update := bson.M{
-		"$set": data,
+		"$set": updateFields,
 	}
 	updated, err := db.UpdateOne(c, collection, filter, update)
 	if err != nil {
