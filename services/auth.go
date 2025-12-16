@@ -392,6 +392,7 @@ func UpdatePasswordInCollections(c *gin.Context, collectionName string, code str
 			"password":  hashedPassword,
 			"reset":     false,
 			"updatedAt": time.Now(),
+			"updatedBy": code,
 		},
 	}
 

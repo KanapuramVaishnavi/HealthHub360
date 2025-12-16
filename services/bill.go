@@ -25,22 +25,28 @@ import (
 )
 
 func CheckForAccess(c *gin.Context, patient map[string]interface{}) error {
-	pharamcistTenantId, err := GetFromContext[string](c, "tenantId")
+	pharmacistId := c.GetString("code")
+	pharmacist, err := FetchPharmacistByCode(c, pharmacistId)
 	if err != nil {
-		log.Println("Error from getFromContext: ", err)
+		log.Println("Error from fetchPatientByCode: ", err)
 		return err
 	}
-	tenantIdFromPatientVal, ok := patient["tenantId"]
+	pharmacistHosId, ok := pharmacist["createdBy"].(string)
 	if !ok {
-		log.Println("Unable to fetch tenantId field from patient")
-		return errors.New("Unable to fetch tenantId field from patient")
+		log.Println("Unable to fetch createdBy from patient ")
+		errors.New("Unable to fetch createdBy from patient")
 	}
-	tenantIdFromPatient, ok := tenantIdFromPatientVal.(string)
+	hospitalIdFromPatientVal, ok := patient["hospitalId"]
 	if !ok {
-		log.Println("Type assertion error for tenantId from patient")
-		return errors.New("Type assertion error for tenantId from patient")
+		log.Println("Unable to fetch hospitalId field from patient")
+		return errors.New("Unable to fetch hospitalId field from patient")
 	}
-	if pharamcistTenantId != tenantIdFromPatient {
+	hospitalIdFromPatient, ok := hospitalIdFromPatientVal.(string)
+	if !ok {
+		log.Println("Type assertion error for hospitalId from patient")
+		return errors.New("Type assertion error for hospitalId from patient")
+	}
+	if pharmacistHosId != hospitalIdFromPatient {
 		log.Println("This pharmacist doesnot have access")
 		return errors.New("This pharmacist doesnot have access")
 	}
@@ -300,7 +306,7 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 			updateMedicine["noOfstrips"] = strconv.Itoa(noOfStrips)
 			updateMedicine["totalNoOfTablets"] = strconv.Itoa(remainingTablets)
 		}
-		if remainingTablets > 0 {
+		if remainingTablets >= 0 {
 			_, err = UpdateMedicines(c, medicineId, updateMedicine)
 			if err != nil {
 				log.Println("Unable to update totalNoOfTablets")
@@ -312,6 +318,18 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 	}
 	return billMedicines, incMedicinePrice, nil
 }
+
+/*
+* Validate user inputs first
+* Verify whether the pharmacist can create bill for that medicalRecord
+* Check the fields and Generate a code and then createdBy
+* Fetch tenantId from context
+* Include tenantId
+* Combine all the remaining data and prepare it
+* Get tests and prescriptionId from the medicalRecord
+* Generate a bill of cost per medicines and cost per tests and return the amount for all of them
+* Save to db and cache
+ */
 func CreateBill(c *gin.Context, patientId string) (string, error) {
 	patient, err := FetchPatientByCode(c, patientId)
 	if err != nil {
@@ -408,6 +426,16 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 	}
 	return "created successfully", nil
 }
+
+/*
+* Get bill for the given billId
+* Get tenantId,code,collection,isSuperAdmin from the context
+* Check who can access
+* Fetch from access, based on the accessibility
+* if exists return
+* If not exists fetch from database
+* Return from database and set in cache
+ */
 func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, error) {
 	tenantId := c.GetString("tenantId")
 	code := c.GetString("code")

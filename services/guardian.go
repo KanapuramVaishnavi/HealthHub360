@@ -12,6 +12,13 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the search filters and update fields
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]interface{}) (string, error) {
 	val := ""
 	receptionistId, err := GetFromContext[string](c, "code")
@@ -85,6 +92,14 @@ func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]int
 	return "Updated Successfully", nil
 }
 
+/*
+* Get isSuperAdmin,tenantId,collection and code values from context
+* Pass those fields and key fetch from cache
+* If exists,check who can access(superAdmin,tenantAdmin,hospitalAdmin)
+* If not found go to db search for the document
+* Search the doument, check who can access guardian
+* If comparision works then return the guardian
+ */
 func FetchGuardianByCode(c *gin.Context, guardianId string) (map[string]interface{}, error) {
 
 	key := util.GuardianKey + guardianId
@@ -127,6 +142,12 @@ func FetchGuardianByCode(c *gin.Context, guardianId string) (map[string]interfac
 
 }
 
+/*
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfGuardians
+* Return them
+ */
 func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -165,6 +186,12 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 	return guardians, nil
 }
 
+/*
+* Build filter to search based on guardianId
+* If found with the field createdBy from the result document found from document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not, no another receptionist can have access to delete it
+ */
 func DeleteGuardian(c *gin.Context, guardianId string) (string, error) {
 	receptionistId, err := GetFromContext[string](c, "code")
 	if err != nil {

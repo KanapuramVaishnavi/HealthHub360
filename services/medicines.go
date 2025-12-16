@@ -13,6 +13,15 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+/*
+* Validate the input fields
+* Normalize the expiryDate
+* Get pharmacistId from the context
+* Bind the data with some more fields
+* Check whether the medicines withe same name already exists in db
+* Create in db
+* Set in cache
+ */
 func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error) {
 	fields := []string{"name", "dosage", "expiryDate", "noOfStrips", "tabletsPerStrip", "pricePerStrip"}
 	for _, value := range fields {
@@ -22,14 +31,6 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 			return "", err
 		}
 	}
-	// intFields := []string{"noOfStrips", "tabletsPerStrip", "pricePerStrip"}
-	// for _, v := range intFields {
-	// 	number, ok := data[v].(float64)
-	// 	if !ok {
-	// 		return "", errors.New(v + " must be a number")
-	// 	}
-	// 	data[v] = int(number)
-	// }
 	dateStr, err := NormalizeDate(data["expiryDate"].(string))
 	if err != nil {
 		log.Println("Error from normalizeDate: ", err)
@@ -109,6 +110,16 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	}
 	return "Successfully created", nil
 }
+
+/*
+* Get medicine for the given medicineId
+* Get tenantId,code,collection,isSuperAdmin from the context
+* Check who can access
+* Fetch from access, based on the accessibility
+* if exists return
+* If not exists fetch from database
+* Return from database and set in cache
+ */
 func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interface{}, error) {
 
 	key := util.MedicinesKey + medicineId
@@ -150,6 +161,12 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 	return result, nil
 }
 
+/*
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfMedicines
+* Return them
+ */
 func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -200,6 +217,15 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 	}
 	return doc, nil
 }
+
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the search filters and update fields
+* Update this medicine by pharmacist, who has access only match hospitalId's of pharmacist and medicines
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interface{}) (string, error) {
 	pharmacistId, err := GetFromContext[string](c, "code")
 	if err != nil {
@@ -233,7 +259,17 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 		log.Println("Error from findOne:", err)
 		return "", err
 	}
-	if pharmacistId != result["createdBy"].(string) {
+	pharmacist := make(map[string]interface{})
+	pharmaCollection := db.OpenCollections(pharmacistCollection)
+	pharmaFilter := bson.M{
+		"code": pharmacistId,
+	}
+	err = db.FindOne(c, pharmaCollection, pharmaFilter, pharmacist)
+	if err != nil {
+		log.Println("Error from findOne: ", err)
+		return "", err
+	}
+	if pharmacist["createdBy"].(string) != result["hospitalId"].(string) {
 		log.Println("This pharmacist doesnot have access")
 		return "", errors.New("This pharamcist does not have access")
 	}
@@ -264,6 +300,12 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 	return "Updated successfully", nil
 }
 
+/*
+* Build filter to search based on medicineId
+* If found, fetch field createdBy from the result document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not, no another pharmacist can have access to delete it
+ */
 func DeleteMedicine(c *gin.Context, medicineId string) (string, error) {
 	pharmacistId, err := GetFromContext[string](c, "code")
 	if err != nil {

@@ -36,6 +36,18 @@ func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) (m
 	}
 	return medicalRecord, nil
 }
+
+/*
+* Validate user inputs first
+* Verify whether the doctor can create prescription for that medicalRecord
+* Check the fields and Generate a code and then createdBy
+* Fetch tenantId from context
+* Include tenantId and generate otp and hash the otp
+* Combine all the remaining data and prepare it
+* Update medicalRecord with the new prescription
+* Update Appointment with isProcessing fields
+* Save to db and cache
+ */
 func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalRecordId string) (string, error) {
 
 	doctorId, err := GetFromContext[string](c, "code")
@@ -141,6 +153,15 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 	return "Created successfully", nil
 }
 
+/*
+* Get prescription from the given prescriptionId
+* Get tenantId,code,collection,isSuperAdmin from the context
+* Check who can access
+* Fetch from access, based on the accessibility
+* if exists return
+* If not exists fetch from database
+* Return from database and set in cache
+ */
 func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]interface{}, error) {
 
 	key := util.PrescriptionKey + prescriptionId
@@ -182,6 +203,12 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 	return result, nil
 }
 
+/*
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfPrescription
+* Return them
+ */
 func FetchAllPresciptions(c *gin.Context) ([]interface{}, error) {
 	coll := prescriptionCollection
 	collection := db.OpenCollections(coll)
@@ -201,6 +228,10 @@ func FetchAllPresciptions(c *gin.Context) ([]interface{}, error) {
 	return prescriptions, nil
 }
 
+/*
+* Validate data and trim and update
+* Update some fields accordingly
+ */
 func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string) (map[string]interface{}, error) {
 
 	Fields := []string{"instructions", "dosagePerFrequency", "noOfDays"}
@@ -234,6 +265,15 @@ func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string
 	data["updatedAt"] = time.Now()
 	return data, nil
 }
+
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the search filters and update fields
+* Update this prescription
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string, data map[string]interface{}) (string, error) {
 	doctorId, err := GetFromContext[string](c, "code")
 	if err != nil {
@@ -301,6 +341,12 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 	return "updated successfully", nil
 }
 
+/*
+* Build filter to search based on prescriptionId
+* If found with the field createdBy from the result document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not no another doctor can have access to delete it
+ */
 func DeletePrescriptionByCode(c *gin.Context, prescripitonId string) (string, error) {
 	collection := db.OpenCollections(prescriptionCollection)
 	doctorId, ok := c.Get("code")

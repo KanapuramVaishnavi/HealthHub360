@@ -13,6 +13,15 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+/*
+* Get medicalRecord from the given medicalRecordId
+* Get tenantId,code,collection,isSuperAdmin from the context
+* Check who can access
+* Fetch from access, based on the accessibility
+* if exists return
+* If not exists fetch from database
+* Return from database and set in cache
+ */
 func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[string]interface{}, error) {
 	key := util.MedicalRecordKey + medicalRecordId
 
@@ -53,6 +62,13 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 	return result, nil
 }
 
+/*
+* Get the code from claims which is updatedBy field
+* Update based on the search filters and update fields
+* Update this by nurse whose id should match with the existing medicalRecord nurseId field
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 
 	code, err := GetFromContext[string](c, "code")
@@ -117,6 +133,14 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 	}
 	return nil
 }
+
+/*
+* Get the code from claims which is updatedBy field
+* Update based on the search filters and update fields
+* Update by doctor, whose id should match with the existing medicalRecord doctorId field
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 	codeVal, ok := c.Get("code")
 	if !ok {
@@ -183,6 +207,14 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	}
 	return nil
 }
+
+/*
+* Get the code from claims which is updatedBy field
+* Update based on the search filters and update fields
+* Update this by pharmacist whose id should match with the existing medicalRecord pharmacistId field
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 	codeVal, ok := c.Get("code")
 	if !ok {
@@ -256,6 +288,14 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 	return nil
 }
 
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the search filters and update fields
+* Update this either by nurse,doctor,nor pharmacist nurse whose id should match with the existing medicalRecord
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string]interface{}) (string, error) {
 	val := ""
 	collectionVal, ok := c.Get("collection")
@@ -300,6 +340,12 @@ func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string
 	}
 }
 
+/*
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfMedicalRecord
+* Return them
+ */
 func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -351,6 +397,12 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 	return doc, nil
 }
 
+/*
+* Build filter to search based on medicalRecordId
+* If found ,fetch field createdBy from the result document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not, no another receptionist can have access to delete it
+ */
 func DeleteMedicalRecordByCode(c *gin.Context, medicalRecordId string) (string, error) {
 	collection := db.OpenCollections(medicalRecordCollection)
 	receptionistId, ok := c.Get("code")

@@ -3,6 +3,7 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
+	"HealthHub360/nats"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -112,79 +113,6 @@ func fetchDoctorSlot(c context.Context, coll *mongo.Collection, filter bson.M) (
 	}
 	return doc, nil
 }
-
-// /*
-// * Search for patientId in dataBase
-// * Search for appointments fields
-// * Search for all the appointments and get maxNum
-// * Generate new appointmentCode and return
-//  */
-// func GenerateAppointmentCode(c context.Context, patientId string) (string, error) {
-
-// 	collection := db.OpenCollections(appointmentCollection)
-
-// 	// Fetch patient document
-// 	patient := make(map[string]interface{})
-// 	filter := bson.M{
-// 		"patientId": patientId,
-// 	}
-// 	appointmentCode, err := GenerateEmpCode(appointmentCollection)
-// 	if err != nil {
-// 		log.Println("Error from generateEmpCode: ", err)
-// 		return "", err
-// 	}
-// 	return appp
-// 	// 	err := db.FindOne(c, collection, filter, patient)
-// 	// 	if err != nil {
-// 	// 		log.Println("Error from the findOne function: ", err)
-// 	// 		return "", err
-// 	// 	}
-
-// 	// 	rawAppt := patient["appointments"]
-// 	// 	var apptList []interface{}
-
-// 	// 	switch v := rawAppt.(type) {
-// 	// 	case primitive.A:
-// 	// 		apptList = []interface{}(v)
-// 	// 	case []interface{}:
-// 	// 		apptList = v
-// 	// 	default:
-// 	// 		return "A0001", nil
-// 	// 	}
-
-// 	// 	if len(apptList) == 0 {
-// 	// 		return "A0001", nil
-// 	// 	}
-
-// 	// 	// Convert to []map[string]interface{}
-// 	// 	var appointments []map[string]interface{}
-// 	// 	for _, a := range apptList {
-// 	// 		if m, ok := a.(map[string]interface{}); ok {
-// 	// 			appointments = append(appointments, m)
-// 	// 		}
-// 	// 	}
-
-// 	// 	// Find max Axxxx code
-// 	// 	maxNum := 0
-// 	// 	re := regexp.MustCompile(`A(\d+)$`)
-
-// 	// 	for _, ap := range appointments {
-// 	// 		code, _ := ap["code"].(string)
-// 	// 		matches := re.FindStringSubmatch(code)
-
-// 	// 		if len(matches) >= 2 {
-// 	// 			num, _ := strconv.Atoi(matches[1])
-// 	// 			if num > maxNum {
-// 	// 				maxNum = num
-// 	// 			}
-// 	// 		}
-// 	// 	}
-// 	// 	log.Println("maxNum: ", maxNum)
-
-// 	// // Generate next code
-// 	// newCode := fmt.Sprintf("A%04d", maxNum+1)
-// 	// return newCode, nil
-// }
 
 /*
 * Search for the slots in the given document
@@ -496,25 +424,34 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		log.Println("Error from setCache : ", cacheErr)
 		return "", cacheErr
 	}
-	// if err := nats.PublishAppointmentCreated(
-	// 	appCode,
-	// 	doctorId,
-	// 	data["patientId"].(string),
-	// 	dateModified,
-	// 	data["time"].(string),
-	// 	data["phoneNo"].(string),
-	// ); err != nil {
-	// 	log.Println("Error publishing appointment.created event:", err)
-	// 	// do not return error, booking already succeeded
-	// }
+	patient, err := FetchPatientByCode(c, data["patientId"].(string))
+	if err != nil {
+		log.Println("Error from fetchPatientByCode: ", err)
+		return "", err
+	}
+	if err := nats.PublishAppointmentCreated(
+		appCode,
+		doctorId,
+		data["patientId"].(string),
+		dateModified,
+		data["time"].(string),
+		patient["phoneNo"].(string),
+	); err != nil {
+		log.Println("Error publishing appointment.created event:", err)
+		// do not return error, booking already succeeded
+	}
 
 	return "created Successfully", nil
 }
 
 /*
-* Get appointmentId from the services
+* Get appointment for the given appointmentId
 * Get tenantId,code,collection,isSuperAdmin from the context
-* Fetch that user
+* Check who can access
+* Fetch from access, based on the accessibility
+* if exists return
+* If not exists fetch from database
+* Return from database and set in cache
  */
 func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {
 
@@ -558,126 +495,12 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 
 }
 
-// func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]interface{}, error) {
-
-// 	coll := appointmentCollection
-// 	key, err := redis.CreateCacheKey(coll, appointmentId)
-// 	if err != nil {
-// 		log.Println("Error creating cache key:", err)
-// 		return nil, err
-// 	}
-// 	tenantId, ok := c.Get("tenantId")
-// 	if !ok {
-// 		log.Println("Unable to get tenantId from context")
-// 		return nil, errors.New("Unable to get tenantId from context")
-// 	}
-// 	isSuperAdmin, ok := c.Get("isSuperAdmin")
-// 	if !ok {
-// 		log.Println("unable to get isSuperAdmin")
-// 		return nil, errors.New("Unable to get isSuperAdmin")
-// 	}
-// 	code, ok := c.Get("code")
-// 	if !ok {
-// 		log.Println("Unable to get code from context")
-// 		return nil, errors.New("Unable to get code from context")
-// 	}
-// 	collFromContext, ok := c.Get("collection")
-// 	if !ok {
-// 		log.Println("Unable to get collection from context")
-// 		return nil, errors.New("Unable to get collection from context")
-// 	}
-// 	collectionFromContext := db.OpenCollections(collFromContext.(string))
-// 	filter := bson.M{
-// 		"code": code.(string),
-// 	}
-// 	userData := make(map[string]interface{})
-// 	findErr := db.FindOne(c, collectionFromContext, filter, userData)
-// 	if findErr != nil {
-// 		log.Println("error from findOne: ", findErr)
-// 		return nil, findErr
-// 	}
-// 	cached := make(map[string]interface{})
-// 	exists, err := redis.GetCache(c, key, &cached)
-// 	if err == nil && exists {
-// 		tenantIdFromCache, ok := cached["tenantId"].(string)
-// 		if !ok {
-// 			return nil, errors.New("cached doctor missing tenantId")
-// 		}
-// 		if isSuperAdmin.(bool) {
-// 			return cached, nil
-// 		}
-// 		if collFromContext.(string) == tenantCollection {
-// 			if tenantId.(string) != tenantIdFromCache {
-// 				log.Println("This user with this tenantId not allowed to fetch this doctor")
-// 				return nil, errors.New("This user with this tenantId not allowed to fetch this doctor")
-// 			}
-// 			return cached, nil
-// 		}
-
-// 		if collFromContext.(string) == hospitalCollection {
-// 			if code != cached["hospitalId"].(string) {
-// 				log.Println("This hospital admin have access")
-// 				return nil, errors.New("This hospital amdin doesnot have access")
-// 			}
-
-// 			return cached, nil
-// 		}
-
-// 		if userData["createdBy"].(string) != cached["hospitalId"].(string) {
-// 			log.Println("This user doesnot have access")
-// 			return nil, errors.New("This user doesnot have access")
-// 		}
-// 		return cached, nil
-
-// 	}
-
-// 	result := make(map[string]interface{})
-// 	collection := db.OpenCollections(coll)
-// 	filter = bson.M{
-// 		"code": appointmentId,
-// 	}
-// 	err = db.FindOne(c, collection, filter, result)
-
-// 	if err != nil {
-// 		log.Println("Error from findOne function")
-// 		return nil, errors.New("Error from the findOne function:")
-// 	}
-// 	if isSuperAdmin.(bool) {
-// 		_ = redis.SetCache(c, key, result)
-// 		return result, nil
-// 	}
-// 	if collFromContext.(string) == tenantCollection {
-// 		value := result["tenantId"].(string)
-// 		if value != tenantId {
-// 			return nil, errors.New("Thistenant doesnot have access")
-// 		}
-// 		_ = redis.SetCache(c, key, result)
-// 		return result, nil
-// 	}
-
-// 	hospitalId := result["hospitalId"].(string)
-// 	if collFromContext.(string) == hospitalCollection {
-
-// 		if hospitalId != code.(string) {
-// 			return nil, errors.New("This hospital doesnot have access")
-// 		}
-// 		_ = redis.SetCache(c, key, result)
-
-// 		return result, nil
-// 	}
-// 	if userData["createdBy"].(string) != hospitalId {
-// 		return nil, errors.New("This user doesnot have access")
-// 	}
-
-// 	_ = redis.SetCache(c, key, result)
-
-// 	return result, nil
-// }
-
-// "diagnosis": "Viral fever",
-// "medications": ["Paracetamol 500mg", "ORS Solution"],
-// "treatmentPlan": ["Rest for 3 days", "Drink plenty of water", "Follow-up after 2 days"],
-// "upComingDate": "29-12-2025"
+/*
+* Make a filter
+* According to the user,the filter condition changes
+* Search for listOfAppointments
+* Return them
+ */
 func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
@@ -729,6 +552,12 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 	return doc, nil
 }
 
+/*
+* Build filter to search based on appointmentId
+* If found, fetch field createdBy from the result document found
+* Compare code from context and createdBy, if it works well go for the delete
+* If not, no another receptionist can have access to delete it
+ */
 func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, error) {
 	collection := db.OpenCollections(appointmentCollection)
 	receptionistId, ok := c.Get("code")
@@ -767,6 +596,14 @@ func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, erro
 	return msg, nil
 }
 
+/*
+* If fields provided,trim them and append to the input data
+* Get the code from claims which is createdBy field
+* Update based on the search filters and update fields
+* Update this appointment by either receptionist nor doctor
+* Fetch updated document
+* Delete from cache, set in Cache
+ */
 func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]interface{}) (string, error) {
 	codeVal, ok := c.Get("code")
 	if !ok {
