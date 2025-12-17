@@ -16,7 +16,7 @@ func Tenant(router *gin.Engine) {
 		tenant.POST("/create", authorization.Authorize("tenant", "create"), CreateTenant)
 		tenant.GET("/fetch/:code", authorization.Authorize("tenant", "view"), FetchTenantByCode)
 		tenant.GET("/fetchAll", authorization.Authorize("tenant", "view"), FetchAll)
-		tenant.PUT("/update/:code", authorization.Authorize("tenant", "update"), UpdateTenant)
+		tenant.PUT("/update/:tenantId", authorization.Authorize("tenant", "update"), UpdateTenant)
 		tenant.DELETE("/delete/:code", authorization.Authorize("Tenant", "delete"), DeleteTenantByCode)
 	}
 }
@@ -64,7 +64,7 @@ map of data and binds it to it respectively
 and move into services
 */
 func UpdateTenant(c *gin.Context) {
-	code := c.Param("code")
+	tenantId := c.Param("tenantId")
 
 	var data map[string]interface{}
 	if err := c.BindJSON(&data); err != nil {
@@ -72,7 +72,7 @@ func UpdateTenant(c *gin.Context) {
 		return
 	}
 
-	updated, err := services.UpdateTenantByCode(c, code, data)
+	updated, err := services.UpdateTenantByCode(c, tenantId, data)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return
