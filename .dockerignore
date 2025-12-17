@@ -1,0 +1,10 @@
+# Environment files
+.env
+.env.*
+
+# Git files
+.git
+.gitignore
+
+# Logs & temp
+*.log
