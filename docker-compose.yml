@@ -1,0 +1,14 @@
+services:
+  nats:
+    image: nats
+    ports:
+      - "4222:4222"
+
+  app:
+    image: healthhub360:1.0
+    ports:
+      - "8080:8080"
+    environment:
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - nats

@@ -1,0 +1,71 @@
+name: HealthHub360 CI/CD
+
+on:
+  push:
+    branches:
+      - dev
+      - uat
+      - beta
+      - main   # prod
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REPO: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/healthhub360
+
+    steps:
+
+    # 1️⃣ Checkout code
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # 2️⃣ Set ENV name from branch
+    - name: Detect Environment
+      run: |
+        if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+          echo "ENV=prod" >> $GITHUB_ENV
+        else
+          echo "ENV=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+        fi
+
+    # 3️⃣ Generate version & tag
+    - name: Generate Tag
+      run: |
+        VERSION=$(date +'%Y%m%d%H%M')-$(git rev-parse --short HEAD)
+        TAG=${ENV}-${VERSION}
+        IMAGE=${ECR_REPO}:${TAG}
+
+        echo "TAG=$TAG" >> $GITHUB_ENV
+        echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+    # 4️⃣ Login to AWS ECR
+    - name: Login to ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # 5️⃣ Build Docker Image (uses .env from branch)
+    - name: Build Image
+      run: docker build -t $IMAGE .
+
+    # 6️⃣ Push Image
+    - name: Push Image
+      run: docker push $IMAGE
+
+    # 7️⃣ Deploy (EC2 example)
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v0.1.9
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ec2-user
+        key: ${{ secrets.EC2_KEY }}
+        script: |
+          docker pull $IMAGE
+          docker stop healthhub360 || true
+          docker rm healthhub360 || true
+          docker run -d \
+            --env-file /opt/healthhub/.env \
+            -p 8080:8080 \
+            --name healthhub360 \
+            $IMAGE

@@ -3,7 +3,6 @@ package services
 import (
 	"HealthHub360/config/db"
 	"HealthHub360/config/redis"
-	"HealthHub360/models"
 	"HealthHub360/util"
 	"context"
 	"errors"
@@ -559,12 +558,12 @@ func CreateLoginRecord(ctx context.Context, role string, code string, email stri
 		return fmt.Errorf("error checking existing login: %w", err)
 	}
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		login := models.Login{
-			Code:       code,
-			Collection: role,
-			Email:      email,
-			PhoneNo:    phone,
-			Password:   password,
+		login := bson.M{
+			"code":       code,
+			"collection": role,
+			"email":      email,
+			"phoneNo":    phone,
+			"password":   password,
 		}
 
 		_, err = db.CreateOne(ctx, loginCollection, login)
