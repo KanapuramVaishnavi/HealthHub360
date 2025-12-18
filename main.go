@@ -1,14 +1,14 @@
 package main
 
 import (
-	"HealthHub360/config/authorization"
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
 	"HealthHub360/jobs"
-	"HealthHub360/nats"
 	"HealthHub360/routes"
 	"log"
 	"os"
+
+	authorization "github.com/KanapuramVaishnavi/Core/config/authorization"
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -24,12 +24,6 @@ func main() {
 	redis.ConnectRedis()
 	jobs.SeedDoctorLeaves()
 	jobs.StartDailyScheduler()
-	if err := nats.InitNATS(); err != nil {
-		log.Fatal("Failed to init NATS:", err)
-	}
-	if err := nats.StartAppointmentNotificationSubscriber(); err != nil {
-		log.Fatal("Failed to start appointment subscriber:", err)
-	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8000"

@@ -1,14 +1,15 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 	"time"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -16,7 +17,7 @@ import (
 func ValidateTestInput(data map[string]interface{}) error {
 	fields := []string{"testname", "price"}
 	for _, f := range fields {
-		if err := getTrimmedString(data, f); err != nil {
+		if err := common.GetTrimmedString(data, f); err != nil {
 			log.Println("Error from getTrimmedString:", err)
 			return err
 		}
@@ -41,7 +42,7 @@ func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
 		log.Println("Error from ValidateUserInput:", err)
 		return val, err
 	}
-	collection := testCollection
+	collection := util.TestCollection
 	userCodeVal, exists := c.Get("code")
 	if !exists {
 		log.Println("Error unable to get the code from the context")
@@ -52,13 +53,13 @@ func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
 	data["UpdatedBy"] = createdBy
 	data["CreatedAt"] = time.Now()
 	data["UpdatedAt"] = time.Now()
-	code, err := GenerateEmpCode(collection)
+	code, err := common.GenerateEmpCode(collection)
 	if err != nil {
 		log.Println("Error from GenerateEmpCode:", err)
 		return "", err
 	}
 	data["code"] = code
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIfFromToken: ", err)
 		return val, err
@@ -71,7 +72,7 @@ func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
 	if err != nil {
 		log.Println("Error while caching new test: ", err)
 	}
-	if _, err := SaveUserToDB(collection, data); err != nil {
+	if _, err := common.SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return val, err
 	}
@@ -86,12 +87,12 @@ func CreateTest(c *gin.Context, data map[string]interface{}) (string, error) {
 func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error {
 	fields := []string{"testname", "price"}
 	for _, f := range fields {
-		if err := trimIfExists(data, f); err != nil {
+		if err := common.TrimIfExists(data, f); err != nil {
 			log.Println("Error from ")
 			return err
 		}
 	}
-	if err := handleDOB(data); err != nil {
+	if err := common.HandleDOB(data); err != nil {
 		return err
 	}
 
@@ -99,11 +100,11 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
 	if !ok {
 		return errors.New("unable to fetch code from context")
 	}
-	updateFilter := BuildUpdateFilter(data, hospitalCode.(string))
+	updateFilter := common.BuildUpdateFilter(data, hospitalCode.(string))
 	filter := bson.M{
 		"code": code,
 	}
-	collection := db.OpenCollections(testCollection)
+	collection := db.OpenCollections(util.TestCollection)
 	value := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, value)
 	if err != nil {
@@ -148,13 +149,13 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
 * If comparision works then return the docs
  */
 func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, error) {
-	coll := testCollection
+	coll := util.TestCollection
 	key := util.TestKey + testId
-	sa, err := IsSuperAdmin(c)
+	sa, err := common.IsSuperAdmin(c)
 	if err != nil {
 		return nil, err
 	}
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
 		return nil, err
@@ -207,7 +208,7 @@ func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, err
 * FindAll from the above filter
  */
 func FetchAllTests(c *gin.Context, tenantId string) ([]interface{}, error) {
-	collection := db.OpenCollections(testCollection)
+	collection := db.OpenCollections(util.TestCollection)
 	filter := bson.M{
 		"tenantId": tenantId,
 	}
@@ -227,7 +228,7 @@ func FetchAllTests(c *gin.Context, tenantId string) ([]interface{}, error) {
  */
 func DeleteTest(c *gin.Context, code string) (string, error) {
 	key := util.TestKey + code
-	collection := db.OpenCollections(testCollection)
+	collection := db.OpenCollections(util.TestCollection)
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to fetch code from the context")

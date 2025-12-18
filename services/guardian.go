@@ -1,12 +1,14 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"log"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -21,27 +23,27 @@ import (
  */
 func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]interface{}) (string, error) {
 	val := ""
-	receptionistId, err := GetFromContext[string](c, "code")
+	receptionistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return val, err
 	}
 	fields := []string{"name", "dob", "phoneNo", "email", "govtId", "relation"}
 	for _, field := range fields {
-		err := trimIfExists(data, field)
+		err := common.TrimIfExists(data, field)
 		if err != nil {
 			log.Println("Error from getTrimmedString: ", err)
 			return val, err
 		}
 	}
-	err = handleDOB(data)
+	err = common.HandleDOB(data)
 	if err != nil {
 		log.Println("Error from handleDOB", err)
 		return val, err
 	}
-	coll := GuardianCollection
+	coll := util.GuardianCollection
 	collection := db.OpenCollections(coll)
-	err = CheckForEmailAndPhoneNo(c, collection, data)
+	err = common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return "", err
@@ -117,10 +119,10 @@ func FetchGuardianByCode(c *gin.Context, guardianId string) (map[string]interfac
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(GuardianCollection)
+	coll := db.OpenCollections(util.GuardianCollection)
 	filter := bson.M{"code": guardianId}
 	result := make(map[string]interface{})
 
@@ -130,7 +132,7 @@ func FetchGuardianByCode(c *gin.Context, guardianId string) (map[string]interfac
 		return nil, errors.New("record not found")
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -159,15 +161,15 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"hospitalId": code,
 		}
-	} else if ctxCollection == receptionistCollection {
+	} else if ctxCollection == util.ReceptionistCollection {
 		filter = bson.M{
 			"createdBy": code,
 		}
@@ -175,7 +177,7 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	coll := GuardianCollection
+	coll := common.GuardianCollection
 	collection := db.OpenCollections(coll)
 	guardians, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
@@ -193,7 +195,7 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 * If not, no another receptionist can have access to delete it
  */
 func DeleteGuardian(c *gin.Context, guardianId string) (string, error) {
-	receptionistId, err := GetFromContext[string](c, "code")
+	receptionistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return "", err
@@ -201,7 +203,7 @@ func DeleteGuardian(c *gin.Context, guardianId string) (string, error) {
 	filter := bson.M{
 		"code": guardianId,
 	}
-	coll := GuardianCollection
+	coll := util.GuardianCollection
 	collection := db.OpenCollections(coll)
 	key := util.GuardianKey + guardianId
 	result := make(map[string]interface{})

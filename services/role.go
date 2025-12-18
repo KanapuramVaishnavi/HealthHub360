@@ -1,15 +1,17 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -100,7 +102,7 @@ func PrepareRole(c *gin.Context, data map[string]interface{}, roleName string, p
 		return nil, errors.New("roleName already exists")
 	}
 
-	roleCode, err := GenerateEmpCode(RoleCollection)
+	roleCode, err := common.GenerateEmpCode(util.RoleCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
 		return nil, fmt.Errorf("failed to generate roleCode: %v", err)
@@ -108,8 +110,8 @@ func PrepareRole(c *gin.Context, data map[string]interface{}, roleName string, p
 
 	data["roleCode"] = roleCode
 	createdBy := "SYSTEM"
-	if roleName != SuperAdminCollection {
-		codeFromContext, err := GetFromContext[string](c, "code")
+	if roleName != util.SuperAdminCollection {
+		codeFromContext, err := common.GetFromContext[string](c, "code")
 		if err != nil {
 			log.Println("Error from getFromContext: ", err)
 			return nil, err
@@ -142,7 +144,7 @@ func CreateRole(c *gin.Context, data map[string]interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	collection := db.OpenCollections(RoleCollection)
+	collection := db.OpenCollections(util.RoleCollection)
 	_, err = db.CreateOne(c, collection, data)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert role: %v", err)
@@ -163,7 +165,7 @@ func CreateRole(c *gin.Context, data map[string]interface{}) (string, error) {
 * Return true only when the document not fund
  */
 func CheckIfRoleNameExists(c context.Context, roleName string) (bool, error) {
-	collectionStr := RoleCollection
+	collectionStr := util.RoleCollection
 	collection := db.OpenCollections(collectionStr)
 	filter := bson.M{
 		"roleName": roleName,
@@ -367,9 +369,9 @@ func parseUpdateFields(updateData map[string]interface{}) (bson.M, error) {
 /*
 updateRoleInDB applies update fields to an existing role document.
 */
-func updateRoleInDB(roleCode string, update bson.M) error {
+func updateRoleInDB(c *gin.Context, roleCode string, update bson.M) error {
 	collection := db.OpenCollections("role")
-	_, err := db.UpdateOne(ctx, collection, bson.M{"roleCode": roleCode}, update)
+	_, err := db.UpdateOne(c, collection, bson.M{"roleCode": roleCode}, update)
 	if err != nil {
 		return fmt.Errorf("update failed: %v", err)
 	}
@@ -400,7 +402,7 @@ func UpdateRole(c *gin.Context, roleCode string, updateData map[string]interface
 	updateFields["UpdatedAt"] = time.Now()
 	updateFields["UpdatedBy"] = "SYSTEM"
 
-	if err := updateRoleInDB(roleCode, bson.M{"$set": updateFields}); err != nil {
+	if err := updateRoleInDB(c, roleCode, bson.M{"$set": updateFields}); err != nil {
 		return nil, err
 	}
 
@@ -442,7 +444,7 @@ func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, err
 		return cached, nil
 	}
 
-	collection := db.OpenCollections(RoleCollection)
+	collection := db.OpenCollections(util.RoleCollection)
 	filter := bson.M{"roleCode": roleCode}
 	role := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, role)

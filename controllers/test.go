@@ -1,9 +1,10 @@
 package controllers
 
 import (
-	"HealthHub360/config/authorization"
 	"HealthHub360/services"
-	"HealthHub360/util"
+
+	authorization "github.com/KanapuramVaishnavi/Core/config/authorization"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 )

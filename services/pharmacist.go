@@ -1,13 +1,14 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -23,37 +24,37 @@ import (
 * Send mail
  */
 func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
-	err := ValidateUserInput(body)
+	err := common.ValidateUserInput(body)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
-	collection, err := FetchCollectionFromRoleDoc(ctx, body["roleCode"].(string))
+	collection, err := common.FetchCollectionFromRoleDoc(ctx, body["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return err
 	}
-	code, CreatedBy, err := CheckerAndGenerateUserCodes(ctx, collection, body["email"].(string), body["phoneNo"].(string))
+	code, CreatedBy, err := common.CheckerAndGenerateUserCodes(ctx, collection, body["email"].(string), body["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserRole", err)
 		return err
 	}
 
-	otp, err := GenerateAndHashOTP(body)
+	otp, err := common.GenerateAndHashOTP(body)
 	if err != nil {
 		log.Println("Error from GenerateAndHashOTP", err)
 		return err
 	}
 	log.Println("otp:", otp)
 
-	tenantId, err := GetTenantIdFromContext(ctx)
+	tenantId, err := common.GetTenantIdFromContext(ctx)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken", err)
 		return err
 	}
 	log.Println("tenantId from context: ", tenantId)
 
-	if err := PrepareUser(body, code, CreatedBy, tenantId); err != nil {
+	if err := common.PrepareUser(body, code, CreatedBy, tenantId); err != nil {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
@@ -62,11 +63,11 @@ func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
 	if err != nil {
 		log.Println("Error while caching new pharmacist: ", err)
 	}
-	if _, err := SaveUserToDB(collection, body); err != nil {
+	if _, err := common.SaveUserToDB(collection, body); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
-	if err := CreateLoginRecord(ctx, collection, code, body["email"].(string), body["phoneNo"].(string), body["password"].(string)); err != nil {
+	if err := common.CreateLoginRecord(ctx, collection, code, body["email"].(string), body["phoneNo"].(string), body["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return err
 	}
@@ -74,7 +75,7 @@ func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
 	subject := "Your Pharmacist OTP Verification"
 	mbody := fmt.Sprintf("Hello %s,\n\nYour OTP for Pharmacist verification is: %s\n\nThank you!", body["name"].(string), otp)
 
-	err = SendOTPToMail(body["email"].(string), subject, mbody)
+	err = common.SendOTPToMail(body["email"].(string), subject, mbody)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
@@ -93,33 +94,33 @@ func CreatePharmacist(ctx *gin.Context, body map[string]interface{}) error {
  */
 func FetchPharmacistByCode(c *gin.Context, pharmacistId string) (map[string]interface{}, error) {
 
-	coll := pharmacistCollection
+	coll := util.PharmacistCollection
 	key := util.PharamacistKey + pharmacistId
-	isSuperAdmin, err := IsSuperAdmin(c)
+	isSuperAdmin, err := common.IsSuperAdmin(c)
 	if err != nil {
 		log.Println("Error from isSuperAdmin: ", err)
 		return nil, err
 	}
 
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from the getTenantIdFromToken:", err)
 		return nil, err
 	}
 
-	code, err := GetFromContext[string](c, "code")
+	code, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext(code): ", err)
 		return nil, err
 	}
-	ctxCollection, err := GetFromContext[string](c, "collection")
+	ctxCollection, err := common.GetFromContext[string](c, "collection")
 	if err != nil {
 		log.Println("Error from getFromContext(collection): ", err)
 		return nil, err
 	}
 	cached := make(map[string]interface{})
 
-	cached, exists, err := FetchByCodeFromCache(c, key, isSuperAdmin, tenantId, code, ctxCollection)
+	cached, exists, err := common.FetchByCodeFromCache(c, key, isSuperAdmin, tenantId, code, ctxCollection)
 	if err != nil {
 		log.Println("Error from FetchByCodeFromCache: ", err)
 		return nil, err
@@ -140,7 +141,7 @@ func FetchPharmacistByCode(c *gin.Context, pharmacistId string) (map[string]inte
 		log.Println("Error from findOne function")
 		return nil, errors.New("Error from the findOne function:")
 	}
-	err = HasAccess(isSuperAdmin, ctxCollection, tenantId, code, result)
+	err = common.HasAccess(isSuperAdmin, ctxCollection, tenantId, code, result)
 	if err != nil {
 		log.Println("Error from HasAccess: ", err)
 		return nil, err
@@ -172,11 +173,11 @@ func FetchAllPharmacist(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"createdBy": code,
 		}
@@ -184,7 +185,7 @@ func FetchAllPharmacist(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	collection := db.OpenCollections(pharmacistCollection)
+	collection := db.OpenCollections(util.PharmacistCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -203,24 +204,24 @@ func FetchAllPharmacist(c *gin.Context) ([]interface{}, error) {
 func UpdatePharmacist(c *gin.Context, data map[string]interface{}, pharmacistId string) (string, error) {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
-		if err := trimIfExists(data, f); err != nil {
+		if err := common.TrimIfExists(data, f); err != nil {
 			log.Println("Error from trimIfExists: ", err)
 			return "", err
 		}
 	}
-	if err := handleDOB(data); err != nil {
+	if err := common.HandleDOB(data); err != nil {
 		return "", err
 	}
 
-	collection := db.OpenCollections(pharmacistCollection)
-	err := CheckForEmailAndPhoneNo(c, collection, data)
+	collection := db.OpenCollections(util.PharmacistCollection)
+	err := common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return "", err
 	}
 
 	code := c.GetString("code")
-	updateFilter := BuildUpdateFilter(data, code)
+	updateFilter := common.BuildUpdateFilter(data, code)
 	filter := bson.M{
 		"code": pharmacistId,
 	}
@@ -270,7 +271,7 @@ func UpdatePharmacist(c *gin.Context, data map[string]interface{}, pharmacistId 
 * If not ,no another hospital admin can have access to delete it
  */
 func DeletePharmacist(c *gin.Context, pharmacistId string) (string, error) {
-	collection := db.OpenCollections(pharmacistCollection)
+	collection := db.OpenCollections(util.PharmacistCollection)
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to fetch code from the context")

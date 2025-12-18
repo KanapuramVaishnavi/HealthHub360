@@ -1,8 +1,9 @@
 package routes
 
 import (
-	"HealthHub360/config/authorization"
 	"HealthHub360/controllers"
+
+	authorization "github.com/KanapuramVaishnavi/Core/config/authorization"
 
 	"github.com/gin-gonic/gin"
 )

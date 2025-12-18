@@ -1,14 +1,15 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -20,30 +21,30 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 
-	err := ValidateUserInput(input)
+	err := common.ValidateUserInput(input)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
 
-	collection, err := FetchCollectionFromRoleDoc(c, input["roleCode"].(string))
+	collection, err := common.FetchCollectionFromRoleDoc(c, input["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from FetchRoleDocAndCollection:", err)
 		return err
 	}
-	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, input["email"].(string), input["phoneNo"].(string))
+	code, createdBy, err := common.CheckerAndGenerateUserCodes(c, collection, input["email"].(string), input["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserCodes:", err)
 		return err
 	}
 
-	otp, err := GenerateAndHashOTP(input)
+	otp, err := common.GenerateAndHashOTP(input)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
 	tenantId := ""
-	if err = PrepareUser(input, code, createdBy, tenantId); err != nil {
+	if err = common.PrepareUser(input, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
@@ -52,18 +53,18 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	if err != nil {
 		log.Println("Error while caching new superAdmin: ", err)
 	}
-	if _, err := SaveUserToDB(collection, input); err != nil {
+	if _, err := common.SaveUserToDB(collection, input); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
-	if err := CreateLoginRecord(c, collection, code, input["email"].(string), input["phoneNo"].(string), input["password"].(string)); err != nil {
+	if err := common.CreateLoginRecord(c, collection, code, input["email"].(string), input["phoneNo"].(string), input["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return err
 	}
 	subject := "Your SuperAdmin OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for SuperAdmin verification is: %s\n\nThank you!", input["name"].(string), otp)
 
-	err = SendOTPToMail(input["email"].(string), subject, body)
+	err = common.SendOTPToMail(input["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
@@ -77,11 +78,11 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 * If doesnot exists in cache,fetch from dataBase
  */
 func FetchSuperAdminByCode(c *gin.Context, superAdminId string) (map[string]interface{}, error) {
-	coll := db.OpenCollections(SuperAdminCollection)
+	coll := db.OpenCollections(util.SuperAdminCollection)
 	superAdmin := make(map[string]interface{})
 	key := util.SuperAdminKey + superAdminId
 	cached := make(map[string]interface{})
-	exists, err := redis.GetCache(ctx, key, &cached)
+	exists, err := redis.GetCache(c, key, &cached)
 	if err == nil && exists {
 		log.Println("From cache: ", cached)
 		return cached, nil
@@ -104,21 +105,21 @@ func FetchSuperAdminByCode(c *gin.Context, superAdminId string) (map[string]inte
 * Delete and set in Cache
  */
 func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]interface{}) error {
-	err := ValidateUserInput(data)
+	err := common.ValidateUserInput(data)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
 		return err
 	}
 
 	if v, ok := data["dob"].(string); ok && strings.TrimSpace(v) != "" {
-		modDob, err := NormalizeDate(v)
+		modDob, err := common.NormalizeDate(v)
 		if err != nil {
 			return errors.New("invalid dob format")
 		}
 		data["dob"] = modDob
 	}
-	collection := db.OpenCollections(SuperAdminCollection)
-	err = CheckForEmailAndPhoneNo(c, collection, data)
+	collection := db.OpenCollections(util.SuperAdminCollection)
+	err = common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return err
@@ -127,7 +128,7 @@ func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]inter
 		"code": superAdminId,
 	}
 	result := make(map[string]interface{})
-	err = db.FindOne(ctx, collection, filter, &result)
+	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from findOne: ", err)
 		return err
@@ -142,7 +143,7 @@ func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]inter
 	}
 	log.Println("Updated: ", updated.ModifiedCount)
 	updatedSuperAdmin := make(map[string]interface{})
-	err = db.FindOne(ctx, collection, filter, &updatedSuperAdmin)
+	err = db.FindOne(c, collection, filter, &updatedSuperAdmin)
 	if err != nil {
 		log.Println("Error from findOne: ", err)
 		return err

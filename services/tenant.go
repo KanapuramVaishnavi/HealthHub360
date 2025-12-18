@@ -1,9 +1,6 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -22,28 +23,28 @@ prepares the data, and inserts the record into MongoDB.
 */
 func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 
-	if err := ValidateUserInput(data); err != nil {
+	if err := common.ValidateUserInput(data); err != nil {
 		log.Println("Error from validateUserInput:", err)
 		return err
 	}
-	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
+	collection, err := common.FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return err
 	}
-	code, CreatedBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+	code, CreatedBy, err := common.CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserRole", err)
 		return err
 	}
-	otp, err := GenerateAndHashOTP(data)
+	otp, err := common.GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GenerateAndHashOTP", err)
 		return err
 	}
 	log.Println("otp:", otp)
 	tenantId := code
-	if err := PrepareUser(data, code, CreatedBy, tenantId); err != nil {
+	if err := common.PrepareUser(data, code, CreatedBy, tenantId); err != nil {
 		log.Println("Error from PrepareUser", err)
 		return err
 	}
@@ -54,11 +55,11 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from SetCache:", err)
 		return errors.New("Error from setCache")
 	}
-	if _, err := SaveUserToDB(collection, data); err != nil {
+	if _, err := common.SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
-	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+	if err := common.CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return err
 	}
@@ -66,7 +67,7 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 	subject := "Your Tenant OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for Tenant verification is: %s\n\nThank you!", data["name"].(string), otp)
 
-	err = SendOTPToMail(data["email"].(string), subject, body)
+	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
@@ -81,17 +82,17 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 * Set in Cache
  */
 func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{}, error) {
-	superAdminId, err := GetFromContext[string](c, "code")
+	superAdminId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return nil, err
 	}
 	collFromContext := c.GetString("collection")
-	if collFromContext != SuperAdminCollection {
+	if collFromContext != util.SuperAdminCollection {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	coll := TenantCollection
+	coll := util.TenantCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
 		"code":      tenantId,
@@ -120,7 +121,7 @@ where it matches with the filter given with it and perform
 the Find all Function
 */
 func FetchAllTenants(c *gin.Context) ([]interface{}, error) {
-	collection := db.OpenCollections(TenantCollection)
+	collection := db.OpenCollections(util.TenantCollection)
 	results, err := db.FindAll(c, collection, nil, nil)
 	if err != nil {
 		return []interface{}{}, err
@@ -148,8 +149,8 @@ func UpdateTenantByCode(c *gin.Context, tenantId string, data map[string]interfa
 		log.Println("Error from parseTenantUpdateFields: ", err)
 		return "", err
 	}
-	collection := db.OpenCollections(TenantCollection)
-	err = CheckForEmailAndPhoneNo(c, collection, data)
+	collection := db.OpenCollections(util.TenantCollection)
+	err = common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return "", err
@@ -207,7 +208,7 @@ func parseTenantUpdateFields(c *gin.Context, updateData map[string]interface{}) 
 	}
 
 	if v, ok := updateData["dob"].(string); ok && strings.TrimSpace(v) != "" {
-		modDob, err := NormalizeDate(v)
+		modDob, err := common.NormalizeDate(v)
 		if err != nil {
 			return nil, errors.New("invalid dob format")
 		}
@@ -229,7 +230,7 @@ updateTenantInDB applies the parsed updates to the tenant document in MongoDB.
 */
 func updateTenantInDB(code string, update bson.M) error {
 
-	collection := db.OpenCollections(TenantCollection)
+	collection := db.OpenCollections(util.TenantCollection)
 	filter := bson.M{"code": code}
 
 	res, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
@@ -249,7 +250,7 @@ func DeleteTenantByCode(c *gin.Context, tenantId string) error {
 	if tenantId == "" {
 		return errors.New("tenant code required")
 	}
-	collection := db.OpenCollections(TenantCollection)
+	collection := db.OpenCollections(util.TenantCollection)
 	filter := bson.M{"code": tenantId}
 	res := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, res)

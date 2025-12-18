@@ -1,14 +1,15 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 	"time"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -50,7 +51,7 @@ func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) (m
  */
 func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalRecordId string) (string, error) {
 
-	doctorId, err := GetFromContext[string](c, "code")
+	doctorId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext(doctorId): ", err)
 		return "", err
@@ -66,7 +67,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		log.Println("Medicines field must be list of interface")
 		return "", errors.New("medicines must be an array")
 	}
-	err = getTrimmedString(data, "diagnosis")
+	err = common.GetTrimmedString(data, "diagnosis")
 	if err != nil {
 		log.Println("Error from getTrimmedString: ", err)
 		return "", err
@@ -79,7 +80,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 
 		fields := []string{"medicineId", "instructions", "dosagePerFrequency", "noOfDays"}
 		for _, field := range fields {
-			err := getTrimmedString(medicine, field)
+			err := common.GetTrimmedString(medicine, field)
 			if err != nil {
 				return "", err
 			}
@@ -99,14 +100,14 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		}
 	}
 
-	tenantId, err := GetFromContext[string](c, "tenantId")
+	tenantId, err := common.GetFromContext[string](c, "tenantId")
 	if err != nil {
 		log.Println("Error from getFromContext(tenantId): ", err)
 		return "", err
 	}
 
-	coll := prescriptionCollection
-	prescriptionCode, err := GenerateEmpCode(coll)
+	coll := util.PrescriptionCollection
+	prescriptionCode, err := common.GenerateEmpCode(coll)
 	if err != nil {
 		return "", err
 	}
@@ -179,10 +180,10 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(prescriptionCollection)
+	coll := db.OpenCollections(util.PrescriptionCollection)
 	filter := bson.M{"code": prescriptionId}
 	result := make(map[string]interface{})
 
@@ -192,7 +193,7 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 		return nil, errors.New("record not found")
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -210,9 +211,9 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 * Return them
  */
 func FetchAllPresciptions(c *gin.Context) ([]interface{}, error) {
-	coll := prescriptionCollection
+	coll := util.PrescriptionCollection
 	collection := db.OpenCollections(coll)
-	doctorId, err := GetFromContext[string](c, "code")
+	doctorId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return nil, err
@@ -236,7 +237,7 @@ func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string
 
 	Fields := []string{"instructions", "dosagePerFrequency", "noOfDays"}
 	for _, field := range Fields {
-		err := trimIfExists(data, field)
+		err := common.TrimIfExists(data, field)
 		if err != nil {
 			log.Println("Error from trimIfExists: ", err)
 			return nil, err
@@ -275,12 +276,12 @@ func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string
 * Delete from cache, set in Cache
  */
 func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string, data map[string]interface{}) (string, error) {
-	doctorId, err := GetFromContext[string](c, "code")
+	doctorId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return "", err
 	}
-	err = trimIfExists(data, "diagnosis")
+	err = common.TrimIfExists(data, "diagnosis")
 	if err != nil {
 		log.Println("Error from trimIfExists: ", err)
 		return "", err
@@ -290,7 +291,7 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 		log.Println("Error from validateUpdatePrescriptionData: ", err)
 		return "", err
 	}
-	coll := prescriptionCollection
+	coll := util.PrescriptionCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
 		"code":                 prescriptionId,
@@ -348,7 +349,7 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 * If not no another doctor can have access to delete it
  */
 func DeletePrescriptionByCode(c *gin.Context, prescripitonId string) (string, error) {
-	collection := db.OpenCollections(prescriptionCollection)
+	collection := db.OpenCollections(util.PrescriptionCollection)
 	doctorId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")

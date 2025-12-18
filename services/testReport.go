@@ -1,18 +1,19 @@
 package services
 
 import (
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
-	coll := testReportCollection
+	coll := util.TestReportCollection
 
 	patient, err := FetchPatientByCode(c, patientId)
 	if err != nil {
@@ -157,7 +158,7 @@ func createSingleTestReport(c *gin.Context, coll interface{}, testId string, pat
 	}
 
 	collName := coll.(string)
-	code, err := GenerateEmpCode(collName)
+	code, err := common.GenerateEmpCode(collName)
 	if err != nil {
 		return "", err
 	}
@@ -168,7 +169,7 @@ func createSingleTestReport(c *gin.Context, coll interface{}, testId string, pat
 	if err != nil {
 		log.Println("Error while caching new testReport: ", err)
 	}
-	if _, err := SaveUserToDB(collName, testReport); err != nil {
+	if _, err := common.SaveUserToDB(collName, testReport); err != nil {
 		return "", err
 	}
 

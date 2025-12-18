@@ -1,13 +1,14 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
-	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -24,34 +25,34 @@ import (
 * Send otp to the provided mail
  */
 func CreateHospital(c *gin.Context, data map[string]interface{}) error {
-	if err := ValidateUserInput(data); err != nil {
+	if err := common.ValidateUserInput(data); err != nil {
 		log.Println("Error from ValidateUserInput", err)
 		return err
 	}
-	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
+	collection, err := common.FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from FetchRoleDocAndCollection:", err)
 		return err
 	}
-	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+	code, createdBy, err := common.CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserCodes:", err)
 		return err
 	}
 	log.Println(code)
-	otp, err := GenerateAndHashOTP(data)
+	otp, err := common.GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return err
 	}
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken: ", err)
 		return err
 	}
 	log.Println("tenantId from context: ", tenantId)
 
-	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
+	if err = common.PrepareUser(data, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return err
 	}
@@ -61,78 +62,24 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 		log.Println("Error from SetCache:", err)
 		return errors.New("Error from setCache")
 	}
-	if _, err := SaveUserToDB(collection, data); err != nil {
+	if _, err := common.SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return err
 	}
-	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+	if err := common.CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return err
 	}
 	subject := "Your Hospital OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for hospital verification is: %s\n\nThank you!", data["name"].(string), otp)
 
-	err = SendOTPToMail(data["email"].(string), subject, body)
+	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return errors.New("failed to send OTP email")
 	}
 	log.Println("mail sent successfully")
 	return nil
-}
-
-/*
-* Trim fields if they exists and fix them into the input data
- */
-func trimIfExists(data map[string]interface{}, key string) error {
-	if _, exists := data[key]; exists {
-		err := getTrimmedString(data, key)
-		if err != nil {
-			log.Printf("Error trimming %s: %v", key, err)
-			return err
-		}
-	}
-	return nil
-}
-
-/*
-* If DOB field exists then trim and normalize it
-* Insert into the input field
- */
-func handleDOB(data map[string]interface{}) error {
-	raw, exists := data["dob"]
-	if !exists {
-		return nil
-	}
-
-	dobStr, ok := raw.(string)
-	if !ok {
-		return errors.New("dob must be a string")
-	}
-
-	if err := getTrimmedString(data, "dob"); err != nil {
-		return err
-	}
-
-	normalized, err := NormalizeDate(dobStr)
-	if err != nil {
-		return err
-	}
-
-	data["dob"] = normalized
-	return nil
-}
-
-/*
-* Include all fields provided and extra field to modify into the input data provided
-* Make it as update filter
- */
-func BuildUpdateFilter(data map[string]interface{}, code string) map[string]interface{} {
-	// data["createdBy"] = createdBy
-	data["updatedBy"] = code
-	data["updatedAt"] = time.Now()
-	updateFilter := bson.M{"$set": data}
-	return updateFilter
 }
 
 /*
@@ -143,23 +90,23 @@ func BuildUpdateFilter(data map[string]interface{}, code string) map[string]inte
 func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId string) error {
 	fields := []string{"name", "email", "phoneNo"}
 	for _, f := range fields {
-		if err := trimIfExists(data, f); err != nil {
+		if err := common.TrimIfExists(data, f); err != nil {
 			log.Println("Error from trimIfExists: ", err)
 			return err
 		}
 	}
-	if err := handleDOB(data); err != nil {
+	if err := common.HandleDOB(data); err != nil {
 		log.Println("Error from handlDOB: ", err)
 		return err
 	}
-	collection := db.OpenCollections(hospitalCollection)
-	err := CheckForEmailAndPhoneNo(c, collection, data)
+	collection := db.OpenCollections(util.HospitalCollection)
+	err := common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return err
 	}
 	tenantId := c.GetString("code")
-	updateFilter := BuildUpdateFilter(data, tenantId)
+	updateFilter := common.BuildUpdateFilter(data, tenantId)
 	filter := bson.M{
 		"code": hospitalId,
 	}
@@ -209,16 +156,16 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId stri
 * If not exists,search in database and set in cache
  */
 func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interface{}, error) {
-	coll := hospitalCollection
+	coll := util.HospitalCollection
 
 	key := util.HospitalKey + hospitalId
 	log.Println("Cache key: ", key)
-	isSuperAdmin, err := GetFromContext[bool](c, "isSuperAdmin")
+	isSuperAdmin, err := common.GetFromContext[bool](c, "isSuperAdmin")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return nil, err
 	}
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken ", err)
 		return nil, err
@@ -274,7 +221,7 @@ func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interfac
 * Return all hospitals for the filter
  */
 func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
-	collection := db.OpenCollections(hospitalCollection)
+	collection := db.OpenCollections(util.HospitalCollection)
 	code := c.GetString("code")
 	log.Println("code from context: ", code)
 	ctxCollection := c.GetString("collection")
@@ -284,7 +231,7 @@ func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if !isSuperAdmin && ctxCollection == TenantCollection {
+	} else if !isSuperAdmin && ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"createdBy": code,
 		}
@@ -307,7 +254,7 @@ func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 * Delete from database as well as in cache also
  */
 func DeleteHospitalByCode(c *gin.Context, hospitalId string) (string, error) {
-	collection := db.OpenCollections(hospitalCollection)
+	collection := db.OpenCollections(util.HospitalCollection)
 	tenantId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")

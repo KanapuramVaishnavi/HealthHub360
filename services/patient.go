@@ -1,9 +1,11 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
+
 	"errors"
 	"fmt"
 	"log"
@@ -29,50 +31,50 @@ import (
 
 func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) {
 	val := ""
-	err := ValidateUserInput(data)
+	err := common.ValidateUserInput(data)
 	if err != nil {
 		log.Println("Error from ValidateUserInput:", err)
 		return val, err
 	}
 
-	collection, err := FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
+	collection, err := common.FetchCollectionFromRoleDoc(c, data["roleCode"].(string))
 	if err != nil {
 		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return val, err
 	}
-	code, createdBy, err := CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
+	code, createdBy, err := common.CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserRole", err)
 		return val, err
 	}
 	log.Println(code)
-	otp, err := GenerateAndHashOTP(data)
+	otp, err := common.GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return val, err
 	}
 	log.Println(otp)
-	err = trimIfExists(data, "gender")
+	err = common.TrimIfExists(data, "gender")
 	if err != nil {
 		log.Println("Error from trimIfExists", err)
 		return val, err
 	}
-	err = trimIfExists(data, "admissionDate")
+	err = common.TrimIfExists(data, "admissionDate")
 	if err != nil {
 		log.Println("Error from trimIfExists")
 		return val, err
 	}
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIdFromToken", err)
 		return val, err
 	}
 	log.Println("tenantId from context: ", tenantId)
-	if err = PrepareUser(data, code, createdBy, tenantId); err != nil {
+	if err = common.PrepareUser(data, code, createdBy, tenantId); err != nil {
 		log.Println("Error from prepareUser :", err)
 		return val, err
 	}
-	age, err := CalculateAge(data["dob"].(string))
+	age, err := common.CalculateAge(data["dob"].(string))
 	if err != nil {
 		log.Println("Error from CalculateAge")
 		return val, err
@@ -97,7 +99,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
 	data["hospitalId"] = receptionist["createdBy"].(string)
 
-	if _, err := SaveUserToDB(collection, data); err != nil {
+	if _, err := common.SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
 		return val, err
 	}
@@ -106,14 +108,14 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	if err != nil {
 		log.Println("Failed caching new patient: ", err)
 	}
-	if err := CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+	if err := common.CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
 		log.Println("Error from the createLoginRecord", err)
 		return val, err
 	}
 	subject := "Your Patient OTP Verification"
 	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
 
-	err = SendOTPToMail(data["email"].(string), subject, body)
+	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return val, errors.New("failed to send OTP email")
@@ -138,7 +140,7 @@ func FetchGuardiansFromData(data map[string]interface{}) ([]interface{}, error) 
 func ValidateGuardianFields(guardian map[string]interface{}) (map[string]interface{}, error) {
 	requiredFields := []string{"name", "dob", "phoneNo", "email", "govtId", "relation", "roleCode"}
 	for _, field := range requiredFields {
-		err := getTrimmedString(guardian, field)
+		err := common.GetTrimmedString(guardian, field)
 		if err != nil {
 			log.Println("Error from getTrimmedString: ", err)
 			return nil, err
@@ -175,25 +177,25 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 			return nil, err
 		}
 		log.Println("Updated guardian: ", guardian)
-		guardianId, _, err := CheckerAndGenerateUserCodes(c, GuardianCollection, guardian["email"].(string), guardian["phoneNo"].(string))
+		guardianId, _, err := common.CheckerAndGenerateUserCodes(c, util.GuardianCollection, guardian["email"].(string), guardian["phoneNo"].(string))
 		if err != nil {
 			log.Println("Error from checkerAndGenerateUserCodes: ", err)
 			return nil, err
 		}
 		listOfGuardians = append(listOfGuardians, guardianId)
-		otp, err := GenerateAndHashOTP(guardian)
+		otp, err := common.GenerateAndHashOTP(guardian)
 		if err != nil {
 			log.Println("Error from generateAndHashOTP: ", err)
 			return nil, err
 		}
 		log.Printf("guardian %s guardian OTP %s: ", guardianId, otp)
 		guardian["guardianId"] = guardianId
-		err = PrepareUser(guardian, guardianId, createdBy, tenantId)
+		err = common.PrepareUser(guardian, guardianId, createdBy, tenantId)
 		if err != nil {
 			log.Println("Error from prepareUser: ", err)
 			return nil, err
 		}
-		age, err := CalculateAge(guardian["dob"].(string))
+		age, err := common.CalculateAge(guardian["dob"].(string))
 		if err != nil {
 			log.Println("Error from calculateAge: ", err)
 			return nil, err
@@ -203,7 +205,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 			return nil, errors.New("Guardian is minor")
 		}
 		guardian["age"] = age
-		collection := db.OpenCollections(GuardianCollection)
+		collection := db.OpenCollections(util.GuardianCollection)
 		_, err = db.CreateOne(c, collection, guardian)
 		if err != nil {
 			log.Println("Error while inserting into db: ", err)
@@ -216,7 +218,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 		}
 		log.Println("code: ", guardian["code"].(string))
 
-		err = CreateLoginRecord(c, GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
+		err = common.CreateLoginRecord(c, common.GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
 		if err != nil {
 			log.Println("Error from guardian createLoginRecord: ", err)
 			return nil, err
@@ -224,7 +226,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 		subject := "Guardian OTP Verification"
 		body := fmt.Sprintf("Hello %s,\n\nYour OTP for guardian verification is: %s\n\nThank you!", guardian["name"].(string), otp)
 
-		err = SendOTPToMail(guardian["email"].(string), subject, body)
+		err = common.SendOTPToMail(guardian["email"].(string), subject, body)
 		if err != nil {
 			log.Println("OTP mail failed:", err)
 			return nil, errors.New("failed to send OTP mail")
@@ -259,10 +261,10 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(patientCollection)
+	coll := db.OpenCollections(util.PatientCollection)
 	filter := bson.M{"code": patientId}
 	result := make(map[string]interface{})
 
@@ -272,7 +274,7 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 		return nil, errors.New("record not found")
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -293,27 +295,27 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
  */
 func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]interface{}) (string, error) {
 	val := ""
-	receptionistId, err := GetFromContext[string](c, "code")
+	receptionistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return val, err
 	}
 	fields := []string{"name", "email", "phoneNo", "dob", "admissionDate", "gender"}
 	for _, field := range fields {
-		err := trimIfExists(data, field)
+		err := common.TrimIfExists(data, field)
 		if err != nil {
 			log.Println("Error from getTrimmedString: ", err)
 			return val, err
 		}
 	}
-	err = handleDOB(data)
+	err = common.HandleDOB(data)
 	if err != nil {
 		log.Println("Error from handleDOB", err)
 		return val, err
 	}
 	if admissionDateVal, ok := data["admissionDate"]; ok {
 		if dateStr, ok := admissionDateVal.(string); ok {
-			updatedAdmissionDate, err := NormalizeDate(dateStr)
+			updatedAdmissionDate, err := common.NormalizeDate(dateStr)
 			if err != nil {
 				log.Println("Error from NormalizeDate:", err)
 				return val, err
@@ -321,9 +323,9 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 			data["admissionDate"] = updatedAdmissionDate
 		}
 	}
-	coll := patientCollection
+	coll := util.PatientCollection
 	collection := db.OpenCollections(coll)
-	err = CheckForEmailAndPhoneNo(c, collection, data)
+	err = common.CheckForEmailAndPhoneNo(c, collection, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return "", err
@@ -391,15 +393,15 @@ func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"hospitalId": code,
 		}
-	} else if ctxCollection == receptionistCollection {
+	} else if ctxCollection == util.ReceptionistCollection {
 		filter = bson.M{
 			"createdBy": code,
 		}
@@ -407,7 +409,7 @@ func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	coll := patientCollection
+	coll := util.PatientCollection
 	collection := db.OpenCollections(coll)
 	patients, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
@@ -425,7 +427,7 @@ func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
 * If not no another receptionist can have access to delete it
  */
 func DeletePatient(c *gin.Context, patientId string) (string, error) {
-	receptionistId, err := GetFromContext[string](c, "code")
+	receptionistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return "", err
@@ -433,7 +435,7 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 	filter := bson.M{
 		"code": patientId,
 	}
-	coll := patientCollection
+	coll := util.PatientCollection
 	collection := db.OpenCollections(coll)
 	key := util.PatientKey + patientId
 	result := make(map[string]interface{})

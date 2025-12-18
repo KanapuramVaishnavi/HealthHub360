@@ -1,13 +1,15 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"fmt"
 	"log"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -38,10 +40,10 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(medicalRecordCollection)
+	coll := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{"code": medicalRecordId}
 	result := make(map[string]interface{})
 
@@ -50,7 +52,7 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 		log.Println("Error from findOne: ", err)
 		return nil, err
 	}
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 
@@ -71,14 +73,14 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
  */
 func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 
-	code, err := GetFromContext[string](c, "code")
+	code, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return err
 	}
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
-	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	medicalRecordColl := db.OpenCollections(util.MedicalRecordCollection)
 	mFilter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -102,7 +104,7 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 		log.Println("This nurse doesnot have access to updatethe record")
 		return errors.New("This nurse doesnot have access to updatethe record")
 	}
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -154,7 +156,7 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	}
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
-	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	medicalRecordColl := db.OpenCollections(util.MedicalRecordCollection)
 	mFilter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -178,7 +180,7 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 		log.Println("This doctor doesnot have access to update the record")
 		return errors.New("This doctor doesnot have access to update the record")
 	}
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -234,7 +236,7 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 	doctorIdFromPharmacist := pharmacist["createdBy"].(string)
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
-	medicalRecordColl := db.OpenCollections(medicalRecordCollection)
+	medicalRecordColl := db.OpenCollections(util.MedicalRecordCollection)
 	mFilter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -258,7 +260,7 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 		log.Println("This pharmacist doesnot have access to update the record")
 		return errors.New("This pharmacist doesnot have access to update the record")
 	}
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
 		"code": medicalRecordId,
 	}
@@ -310,20 +312,20 @@ func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string
 	}
 	msg := "Updated successfully"
 	switch collection {
-	case nurseCollection:
+	case util.NurseCollection:
 		if err := UpdateMedicalRecordByNurse(c, medicalRecordId, data); err != nil {
 			return "", err
 		}
 		log.Println("Updated by nurse")
 		return msg, nil
 
-	case doctorCollection:
+	case util.DoctorCollection:
 		if err := UpdateMedicalRecordByDoctor(c, medicalRecordId, data); err != nil {
 			return "", err
 		}
 		log.Println("Updated by doctor")
 		return msg, nil
-	case pharmacistCollection:
+	case util.PharmacistCollection:
 		if err := UpdateMedicalRecordByPharmacist(c, medicalRecordId, data); err != nil {
 			return "", err
 		}
@@ -357,16 +359,16 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"hospitalId": code,
 		}
-	} else if ctxCollection == receptionistCollection {
-		collection := db.OpenCollections(receptionistCollection)
+	} else if ctxCollection == util.ReceptionistCollection {
+		collection := db.OpenCollections(util.ReceptionistCollection)
 		receptionist := make(map[string]interface{})
 		err := db.FindOne(c, collection, bson.M{"code": code}, receptionist)
 		if err != nil {
@@ -376,11 +378,11 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 		filter = bson.M{
 			"hospitalId": receptionist["createdBy"].(string),
 		}
-	} else if ctxCollection == doctorCollection {
+	} else if ctxCollection == util.DoctorCollection {
 		filter = bson.M{
 			"doctorId": code,
 		}
-	} else if ctxCollection == nurseCollection {
+	} else if ctxCollection == util.NurseCollection {
 		filter = bson.M{
 			"nurseId": code,
 		}
@@ -388,7 +390,7 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(util.MedicalRecordCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -404,7 +406,7 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 * If not, no another receptionist can have access to delete it
  */
 func DeleteMedicalRecordByCode(c *gin.Context, medicalRecordId string) (string, error) {
-	collection := db.OpenCollections(medicalRecordCollection)
+	collection := db.OpenCollections(util.MedicalRecordCollection)
 	receptionistId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")

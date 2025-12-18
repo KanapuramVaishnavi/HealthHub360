@@ -1,9 +1,6 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -18,6 +15,11 @@ import (
 	"os/exec"
 	"strconv"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -34,7 +36,7 @@ func CheckForAccess(c *gin.Context, patient map[string]interface{}) error {
 	pharmacistHosId, ok := pharmacist["createdBy"].(string)
 	if !ok {
 		log.Println("Unable to fetch createdBy from patient ")
-		errors.New("Unable to fetch createdBy from patient")
+		return errors.New("Unable to fetch createdBy from patient")
 	}
 	hospitalIdFromPatientVal, ok := patient["hospitalId"]
 	if !ok {
@@ -384,7 +386,7 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 	bill["amountForTests"] = strconv.Itoa(incTestPrice)
 	bill["amountForMedicine"] = strconv.Itoa(incMedicinePrice)
 	bill["amount"] = strconv.Itoa(incMedicinePrice + incTestPrice)
-	code, err := GenerateEmpCode(BillCollection)
+	code, err := common.GenerateEmpCode(util.BillCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
 		return "", err
@@ -398,7 +400,7 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 		return "", err
 	}
 
-	pharmacistId, err := GetFromContext[string](c, "code")
+	pharmacistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from GetFromContext: ", err)
 		return "", err
@@ -412,7 +414,7 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 	bill["updatedBy"] = pharmacistId
 	bill["createdAt"] = time.Now()
 	bill["updatedAt"] = time.Now()
-	collection := db.OpenCollections(BillCollection)
+	collection := db.OpenCollections(util.BillCollection)
 	inserted, err := db.CreateOne(c, collection, bill)
 	if err != nil {
 		log.Println("Error from createOne: ", err)
@@ -451,10 +453,10 @@ func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, err
 	}
 
 	key := util.BillKey + billId
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(BillCollection)
+	coll := db.OpenCollections(util.BillCollection)
 	filter := bson.M{"code": billId}
 	result := make(map[string]interface{})
 
@@ -464,7 +466,7 @@ func FetchBillByCode(c *gin.Context, billId string) (map[string]interface{}, err
 		return nil, errors.New("record not found")
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -721,7 +723,7 @@ func BuildUPIString(upiID, name string, amount int) string {
 }
 
 func DeleteBillByCode(c *gin.Context, billId string) (string, error) {
-	collection := db.OpenCollections(BillCollection)
+	collection := db.OpenCollections(util.BillCollection)
 	pharmacistId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")

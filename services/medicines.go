@@ -1,12 +1,14 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/util"
 	"errors"
 	"log"
 	"strconv"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -25,13 +27,13 @@ import (
 func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error) {
 	fields := []string{"name", "dosage", "expiryDate", "noOfStrips", "tabletsPerStrip", "pricePerStrip"}
 	for _, value := range fields {
-		err := getTrimmedString(data, value)
+		err := common.GetTrimmedString(data, value)
 		if err != nil {
 			log.Println("Error from getTrimmedString")
 			return "", err
 		}
 	}
-	dateStr, err := NormalizeDate(data["expiryDate"].(string))
+	dateStr, err := common.NormalizeDate(data["expiryDate"].(string))
 	if err != nil {
 		log.Println("Error from normalizeDate: ", err)
 		return "", err
@@ -63,7 +65,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	totalNoOfTabletsVal := noOfStrips * tabletsPerStrip
 	totalNoOfTablets := strconv.Itoa(totalNoOfTabletsVal)
 	data["totalNoOfTablets"] = totalNoOfTablets
-	coll := medicineCollection
+	coll := util.MedicineCollection
 	collection := db.OpenCollections(coll)
 
 	filter := bson.M{
@@ -75,13 +77,13 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		log.Println("Medicine with same name already exists: ", err)
 		return "", errors.New("Medicine with same name already exists")
 	}
-	code, err := GenerateEmpCode(medicineCollection)
+	code, err := common.GenerateEmpCode(util.MedicineCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
 		return "", err
 	}
 	data["code"] = code
-	pharmaColl := pharmacistCollection
+	pharmaColl := util.PharmacistCollection
 	pharmaCollection := db.OpenCollections(pharmaColl)
 	pharmacist := make(map[string]interface{})
 	pFilter := bson.M{
@@ -136,11 +138,11 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
 
-	coll := db.OpenCollections(medicineCollection)
+	coll := db.OpenCollections(util.MedicineCollection)
 	filter := bson.M{"code": medicineId}
 	result := make(map[string]interface{})
 
@@ -150,7 +152,7 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 		return nil, err
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -178,16 +180,16 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"hospitalId": code,
 		}
-	} else if ctxCollection == pharmacistCollection {
-		collection := db.OpenCollections(pharmacistCollection)
+	} else if ctxCollection == util.PharmacistCollection {
+		collection := db.OpenCollections(util.PharmacistCollection)
 		pharmacist := make(map[string]interface{})
 		err := db.FindOne(c, collection, bson.M{"code": code}, pharmacist)
 		if err != nil {
@@ -197,11 +199,11 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 		filter = bson.M{
 			"hospitalId": pharmacist["createdBy"].(string),
 		}
-	} else if ctxCollection == doctorCollection {
+	} else if ctxCollection == util.DoctorCollection {
 		filter = bson.M{
 			"doctorId": code,
 		}
-	} else if ctxCollection == nurseCollection {
+	} else if ctxCollection == util.NurseCollection {
 		filter = bson.M{
 			"nurseId": code,
 		}
@@ -209,7 +211,7 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	collection := db.OpenCollections(medicineCollection)
+	collection := db.OpenCollections(util.MedicineCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -227,14 +229,14 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 * Delete from cache, set in Cache
  */
 func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interface{}) (string, error) {
-	pharmacistId, err := GetFromContext[string](c, "code")
+	pharmacistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return "", err
 	}
 	fields := []string{"name", "dosage", "expiryDate"}
 	for _, field := range fields {
-		err := trimIfExists(data, field)
+		err := common.TrimIfExists(data, field)
 		if err != nil {
 
 			log.Println("Error from trimIfExists: ", err)
@@ -248,7 +250,7 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 			data[field] = int(number)
 		}
 	}
-	coll := medicineCollection
+	coll := util.MedicineCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
 		"code": medicineId,
@@ -260,7 +262,7 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 		return "", err
 	}
 	pharmacist := make(map[string]interface{})
-	pharmaCollection := db.OpenCollections(pharmacistCollection)
+	pharmaCollection := db.OpenCollections(util.PharmacistCollection)
 	pharmaFilter := bson.M{
 		"code": pharmacistId,
 	}
@@ -307,12 +309,12 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 * If not, no another pharmacist can have access to delete it
  */
 func DeleteMedicine(c *gin.Context, medicineId string) (string, error) {
-	pharmacistId, err := GetFromContext[string](c, "code")
+	pharmacistId, err := common.GetFromContext[string](c, "code")
 	if err != nil {
 		log.Println("Error from getFromContext: ", err)
 		return "", err
 	}
-	coll := medicineCollection
+	coll := util.MedicineCollection
 	collection := db.OpenCollections(coll)
 	filter := bson.M{
 		"code":      medicineId,

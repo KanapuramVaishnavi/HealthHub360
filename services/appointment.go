@@ -1,15 +1,16 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/redis"
-	"HealthHub360/nats"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
 	"log"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -36,7 +37,7 @@ func getReceptionistID(c *gin.Context) (interface{}, error) {
 func validateAppointmentInput(data map[string]interface{}) error {
 	fields := []string{"patientId", "reason", "symptoms", "date", "time"}
 	for _, f := range fields {
-		if err := getTrimmedString(data, f); err != nil {
+		if err := common.GetTrimmedString(data, f); err != nil {
 			log.Println("Error from getTrimmedString:", err)
 			return err
 		}
@@ -181,7 +182,7 @@ func checkAndBookSlot(ctx context.Context, slotColl *mongo.Collection, doc map[s
 * Insert new document in the medicalRecord db
  */
 func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId string, hospitalId string, nurseId string, createdBy string, tenantId string) (string, error) {
-	medicalCode, err := GenerateEmpCode(medicalRecordCollection)
+	medicalCode, err := common.GenerateEmpCode(util.MedicalRecordCollection)
 	if err != nil {
 		log.Println("Error while generating medicalRecord code: ", err)
 		return "", err
@@ -201,19 +202,19 @@ func createMedicalRecord(c *gin.Context, data map[string]interface{}, doctorId s
 		"createdAt":     time.Now(),
 		"updatedAt":     time.Now(),
 	}
-	_, err = GenerateAndHashOTP(data)
+	_, err = common.GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
 		return "", err
 	}
-	coll := medicalRecordCollection
+	coll := util.MedicalRecordCollection
 	collection := db.OpenCollections(coll)
 	key := util.MedicalRecordKey + medicalCode
 	err = redis.SetCache(c, key, medicalDoc)
 	if err != nil {
 		log.Println("Error while caching new medicalRecord : ", err)
 	}
-	_, err = db.CreateOne(ctx, collection, medicalDoc)
+	_, err = db.CreateOne(c, collection, medicalDoc)
 	if err != nil {
 		log.Println("Error while creating createMedicalRecord: ", err)
 		return "", err
@@ -252,7 +253,7 @@ func buildAppointment(data map[string]interface{}, doctorId, hospitalId, nurseId
 * Refresh the cache
  */
 func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patientId string) error {
-	patCollection := db.OpenCollections(patientCollection)
+	patCollection := db.OpenCollections(util.PatientCollection)
 	patientFilter := bson.M{
 		"code": patientId,
 	}
@@ -357,7 +358,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", err
 	}
 
-	dateModified, err := NormalizeDate(data["date"].(string))
+	dateModified, err := common.NormalizeDate(data["date"].(string))
 	if err != nil {
 		log.Println("Error from NormalizeDate: ", err)
 		return "", err
@@ -368,7 +369,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		log.Println("Error from FetchReceptionist: ", err)
 		return "", err
 	}
-	slotColl := db.OpenCollections(doctorTimeSlotCollection)
+	slotColl := db.OpenCollections(util.DoctorTimeSlotCollection)
 	docSlotFilter := bson.M{
 		"doctorId":   doctorId,
 		"hospitalId": doctor["createdBy"].(string),
@@ -380,7 +381,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		log.Println("Error from fetchDoctorSlot:", err)
 		return "", err
 	}
-	appCode, err := GenerateEmpCode(appointmentCollection)
+	appCode, err := common.GenerateEmpCode(util.AppointmentCollection)
 	if err != nil {
 		log.Println("Error from generateEmpCode: ", err)
 		return "", err
@@ -392,7 +393,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", err
 	}
 	data["code"] = appCode
-	tenantId, err := GetTenantIdFromContext(c)
+	tenantId, err := common.GetTenantIdFromContext(c)
 	if err != nil {
 		log.Println("Error from getTenantIfFromToken", err)
 		return "", err
@@ -411,7 +412,7 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 		return "", patientErr
 	}
 
-	collection := db.OpenCollections(appointmentCollection)
+	collection := db.OpenCollections(util.AppointmentCollection)
 	inserted, err := db.CreateOne(c, collection, newApp)
 	if err != nil {
 		log.Println("Error from createOne: ", err)
@@ -423,22 +424,6 @@ func CreateAppointment(c *gin.Context, doctorId string, nurseId string, data map
 	if cacheErr != nil {
 		log.Println("Error from setCache : ", cacheErr)
 		return "", cacheErr
-	}
-	patient, err := FetchPatientByCode(c, data["patientId"].(string))
-	if err != nil {
-		log.Println("Error from fetchPatientByCode: ", err)
-		return "", err
-	}
-	if err := nats.PublishAppointmentCreated(
-		appCode,
-		doctorId,
-		data["patientId"].(string),
-		dateModified,
-		data["time"].(string),
-		patient["phoneNo"].(string),
-	); err != nil {
-		log.Println("Error publishing appointment.created event:", err)
-		// do not return error, booking already succeeded
 	}
 
 	return "created Successfully", nil
@@ -470,10 +455,10 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 		return nil, err
 	}
 
-	if cached, exists, err := checkCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
+	if cached, exists, err := common.CheckCacheAccess(c, key, collFromContext, userData, tenantId, code, isSuperAdmin); exists {
 		return cached, err
 	}
-	coll := db.OpenCollections(appointmentCollection)
+	coll := db.OpenCollections(util.AppointmentCollection)
 	filter := bson.M{"code": appointmentId}
 	result := make(map[string]interface{})
 
@@ -483,7 +468,7 @@ func FetchAppointmentByCode(c *gin.Context, appointmentId string) (map[string]in
 		return nil, errors.New("record not found")
 	}
 
-	if err := canAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
+	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -512,16 +497,16 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 	filter := make(map[string]interface{})
 	if isSuperAdmin {
 		filter = bson.M{}
-	} else if ctxCollection == TenantCollection {
+	} else if ctxCollection == util.TenantCollection {
 		filter = bson.M{
 			"tenantId": code,
 		}
-	} else if ctxCollection == hospitalCollection {
+	} else if ctxCollection == util.HospitalCollection {
 		filter = bson.M{
 			"hospitalId": code,
 		}
-	} else if ctxCollection == receptionistCollection {
-		collection := db.OpenCollections(receptionistCollection)
+	} else if ctxCollection == util.ReceptionistCollection {
+		collection := db.OpenCollections(util.ReceptionistCollection)
 		receptionist := make(map[string]interface{})
 		err := db.FindOne(c, collection, bson.M{"code": code}, receptionist)
 		if err != nil {
@@ -531,11 +516,11 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 		filter = bson.M{
 			"hospitalId": receptionist["createdBy"].(string),
 		}
-	} else if ctxCollection == doctorCollection {
+	} else if ctxCollection == util.DoctorCollection {
 		filter = bson.M{
 			"doctorId": code,
 		}
-	} else if ctxCollection == nurseCollection {
+	} else if ctxCollection == util.NurseCollection {
 		filter = bson.M{
 			"nurseId": code,
 		}
@@ -543,7 +528,7 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	collection := db.OpenCollections(appointmentCollection)
+	collection := db.OpenCollections(util.AppointmentCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
 		log.Println("Error from FindAll", err)
@@ -559,7 +544,7 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 * If not, no another receptionist can have access to delete it
  */
 func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, error) {
-	collection := db.OpenCollections(appointmentCollection)
+	collection := db.OpenCollections(util.AppointmentCollection)
 	receptionistId, ok := c.Get("code")
 	if !ok {
 		return "", errors.New("unable to fetch code from context")
@@ -619,8 +604,8 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 
 	collFromContext := c.GetString("collection")
 	data["updatedAt"] = time.Now()
-	appColl := db.OpenCollections(appointmentCollection)
-	err := CheckForEmailAndPhoneNo(c, appColl, data)
+	appColl := db.OpenCollections(util.AppointmentCollection)
+	err := common.CheckForEmailAndPhoneNo(c, appColl, data)
 	if err != nil {
 		log.Println("Error from checkForEmailAndPhoneNo: ", err)
 		return "", err
@@ -634,7 +619,7 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		log.Println("Error while fetching medicalRecord(FindOne)", err)
 		return "", err
 	}
-	if collFromContext == receptionistCollection {
+	if collFromContext == util.ReceptionistCollection {
 		receptionistVal, ok := appointment["createdBy"]
 		if !ok {
 			log.Println("Error while checking the value is present in it or not")
@@ -650,7 +635,7 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 			return "", errors.New("This receptionist doesnot have access to update the appointment")
 		}
 	}
-	if collFromContext == doctorCollection {
+	if collFromContext == common.DoctorCollection {
 		doctor, err := FetchDoctorByCode(c, code)
 		if err != nil {
 			log.Println("Error from fetchPharmacistByCode: ", err)
@@ -666,7 +651,7 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 			return "", errors.New("This pharmacist doesnot have access ")
 		}
 	}
-	collection := db.OpenCollections(appointmentCollection)
+	collection := db.OpenCollections(util.AppointmentCollection)
 	filter := bson.M{
 		"code": appointmentId,
 	}

@@ -1,9 +1,6 @@
 package services
 
 import (
-	"HealthHub360/config/db"
-	"HealthHub360/config/jwt"
-	"HealthHub360/util"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +8,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	db "github.com/KanapuramVaishnavi/Core/config/db"
+	jwt "github.com/KanapuramVaishnavi/Core/config/jwt"
+	common "github.com/KanapuramVaishnavi/Core/coreServices"
+	util "github.com/KanapuramVaishnavi/Core/util"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -37,28 +39,28 @@ func validateLoginInput(data map[string]interface{}) error {
 		return errors.New(util.PASSWORD_NOT_PROVIDED)
 	}
 	if passwordExists {
-		err := getTrimmedString(data, "password")
+		err := common.GetTrimmedString(data, "password")
 		if err != nil {
 			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.PASSWORD_NOT_PROVIDED)
 		}
 	}
 	if emailExists {
-		err := getTrimmedString(data, "email")
+		err := common.GetTrimmedString(data, "email")
 		if err != nil {
 			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.EMAIL_NOT_PROVIDED)
 		}
 	}
 	if phoneExists {
-		err := getTrimmedString(data, "phoneNo")
+		err := common.GetTrimmedString(data, "phoneNo")
 		if err != nil {
 			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
 		}
 	}
 	if codeExists {
-		err := getTrimmedString(data, "code")
+		err := common.GetTrimmedString(data, "code")
 		if err != nil {
 			log.Println("error from getTrimmed string:", err)
 			return errors.New(util.CODE_NOT_PROVIDED)
@@ -286,7 +288,7 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 	roleCode := userDoc["roleCode"].(string)
 	tenantId := ""
 	isSuperAdmin := false
-	if collection == SuperAdminCollection {
+	if collection == util.SuperAdminCollection {
 		tenantId = ""
 		isSuperAdmin = true
 	} else {
@@ -360,12 +362,12 @@ func ValidatePasswordInput(body map[string]interface{}) (string, string, error) 
 	if !cpExists {
 		return "", "", errors.New("confirmPassword required")
 	}
-	err := getTrimmedString(body, "newPassword")
+	err := common.GetTrimmedString(body, "newPassword")
 	if err != nil {
 		log.Println("Error from getTrimmedString:", err)
 		return "", "", errors.New("invalid newPassword")
 	}
-	err = getTrimmedString(body, "confirmPassword")
+	err = common.GetTrimmedString(body, "confirmPassword")
 	if err != nil {
 		log.Println("Error from getTrimmedString:", err)
 		return "", "", errors.New("invalid confirmPassword")
@@ -526,7 +528,7 @@ func validateForgetInput(data map[string]interface{}) error {
 	}
 
 	if emailExists {
-		err := getTrimmedString(data, "email")
+		err := common.GetTrimmedString(data, "email")
 		if err != nil {
 			log.Println("Error from the getTrimmed string:", err)
 			return errors.New(util.EMAIL_NOT_PROVIDED)
@@ -534,7 +536,7 @@ func validateForgetInput(data map[string]interface{}) error {
 	}
 
 	if phoneExists {
-		err := getTrimmedString(data, "phoneNo")
+		err := common.GetTrimmedString(data, "phoneNo")
 		if err != nil {
 			log.Println("Error from the getTrimmed string:", err)
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
@@ -595,7 +597,7 @@ func ForgotPassword(c *gin.Context, data map[string]interface{}) (string, error)
 	}
 
 	// Generate OTP
-	otp := GenerateOTP()
+	otp := common.GenerateOTP()
 	log.Println(otp)
 	expiry := time.Now().Add(10 * time.Minute)
 	hashedPassword, err := HashPassword(otp)
@@ -631,7 +633,7 @@ func ForgotPassword(c *gin.Context, data map[string]interface{}) (string, error)
 	subject := "Your forget OTP Verification"
 	body := fmt.Sprintf("Hello ,\n\nYour reset OTP for verification is: %s\n\nThank you!", otp)
 
-	err = SendOTPToMail(email, subject, body)
+	err = common.SendOTPToMail(email, subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
 		return "", errors.New("failed to send OTP email")
