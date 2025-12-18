@@ -1,3 +1,4 @@
 echo ".env" >> .gitignore
+.env
 git add .gitignore
 git commit -m "Ignore .env file"
