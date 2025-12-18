@@ -177,7 +177,7 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 		log.Println("This user doesnot have access")
 		return nil, errors.New("This user doesnot have access")
 	}
-	coll := common.GuardianCollection
+	coll := util.GuardianCollection
 	collection := db.OpenCollections(coll)
 	guardians, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {

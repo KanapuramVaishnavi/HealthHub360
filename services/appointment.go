@@ -635,7 +635,7 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 			return "", errors.New("This receptionist doesnot have access to update the appointment")
 		}
 	}
-	if collFromContext == common.DoctorCollection {
+	if collFromContext == util.DoctorCollection {
 		doctor, err := FetchDoctorByCode(c, code)
 		if err != nil {
 			log.Println("Error from fetchPharmacistByCode: ", err)

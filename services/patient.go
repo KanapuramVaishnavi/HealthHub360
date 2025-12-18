@@ -218,7 +218,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 		}
 		log.Println("code: ", guardian["code"].(string))
 
-		err = common.CreateLoginRecord(c, common.GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
+		err = common.CreateLoginRecord(c, util.GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
 		if err != nil {
 			log.Println("Error from guardian createLoginRecord: ", err)
 			return nil, err
