@@ -36,21 +36,16 @@ func CheckForAccess(c *gin.Context, patient map[string]interface{}) error {
 	pharmacistHosId, ok := pharmacist["createdBy"].(string)
 	if !ok {
 		log.Println("Unable to fetch createdBy from patient ")
-		return errors.New("Unable to fetch createdBy from patient")
+		return errors.New(util.UNABLE_TO_FETCH_CREATED_BY_FROM_PATIENT)
 	}
-	hospitalIdFromPatientVal, ok := patient["hospitalId"]
+	hospitalIdFromPatient, ok := patient["hospitalId"].(string)
 	if !ok {
 		log.Println("Unable to fetch hospitalId field from patient")
-		return errors.New("Unable to fetch hospitalId field from patient")
-	}
-	hospitalIdFromPatient, ok := hospitalIdFromPatientVal.(string)
-	if !ok {
-		log.Println("Type assertion error for hospitalId from patient")
-		return errors.New("Type assertion error for hospitalId from patient")
+		return errors.New(util.UNABLE_TO_FETCH_HOSPITAL_ID_FROM_PATIENT)
 	}
 	if pharmacistHosId != hospitalIdFromPatient {
 		log.Println("This pharmacist doesnot have access")
-		return errors.New("This pharmacist doesnot have access")
+		return errors.New(util.PHARMACIST_DOESNOT_HAVE_ACCESS_TO_BILL)
 	}
 	return nil
 }
@@ -58,7 +53,7 @@ func GetLatestAppointmentIDFromPatient(patient map[string]interface{}) (string, 
 	rawApp, ok := patient["appointments"]
 	if !ok || rawApp == nil {
 		log.Println("Unable to find key Appointments from patient")
-		return "", errors.New("Unable to find field appointments from patient")
+		return "", errors.New(util.UNABLE_TO_FIND_APPOINTMENTS_IN_PATIENT)
 	}
 	log.Printf("appointments type : %T", rawApp)
 	var app []interface{}
@@ -68,15 +63,15 @@ func GetLatestAppointmentIDFromPatient(patient map[string]interface{}) (string, 
 	case []interface{}:
 		app = v
 	default:
-		return "", errors.New("unsupported appointments type")
+		return "", errors.New(util.UNSUPPORTED_APPOINTMENTS_TYPE)
 	}
 	if len(app) == 0 {
-		return "", errors.New("no appointments found")
+		return "", errors.New(util.APPOINTMENT_FIELD_IS_EMPTY)
 	}
 
 	appointmentId, ok := app[len(app)-1].(string)
 	if !ok {
-		return "", errors.New("invalid appointmentId format")
+		return "", errors.New(util.UNABLE_TO_FETCH_LATEST_APPOINTMENT)
 	}
 	return appointmentId, nil
 }
@@ -85,7 +80,7 @@ func FetchTestsFromMedicalRecord(medicalRecord map[string]interface{}) ([]string
 	rawTests, exists := medicalRecord["testList"]
 	if !exists || rawTests == nil {
 		log.Println("No testList found in medicalRecord")
-		return nil, errors.New("No tests found in medicalRecord")
+		return nil, errors.New(util.UNABLE_TO_FIND_TEST_LISTS_IN_MEDICAL_RECORD)
 	}
 	log.Printf("The type of rawTests: %T ", rawTests)
 	var testList []interface{}
@@ -96,13 +91,13 @@ func FetchTestsFromMedicalRecord(medicalRecord map[string]interface{}) ([]string
 	case primitive.A:
 		testList = []interface{}(v)
 	default:
-		return nil, errors.New("unsupported appointments type")
+		return nil, errors.New(util.UNSUPPORTED_TEST_LIST)
 	}
 	for _, t := range testList {
 		val, ok := t.(string)
 		if !ok {
 			log.Println("Unable to fetch test from testList")
-			return nil, errors.New("Unable to fetch test from testList")
+			return nil, errors.New(util.UNABLE_TO_FETCH_TEST_FROM_TEST_LIST)
 		}
 		tests = append(tests, val)
 	}
@@ -128,7 +123,7 @@ func GenerateBillForTests(c *gin.Context, medicalRecord map[string]interface{}) 
 		priceVal, ok := test["price"].(string)
 		if !ok {
 			log.Println("Unable to get price from single test")
-			return nil, 0, errors.New("Unable to get price from single test")
+			return nil, 0, errors.New(util.UNABLE_TO_FETCH_PRICE_FROM_TEST)
 		}
 		price, _ := strconv.Atoi(priceVal)
 		billTest["testId"] = t
@@ -139,15 +134,10 @@ func GenerateBillForTests(c *gin.Context, medicalRecord map[string]interface{}) 
 	return billTests, incTestPrice, nil
 }
 func FetchPrescriptionIdFromMedicalRecord(medicalRecord map[string]interface{}) (string, error) {
-	prescriptionIdVal, ok := medicalRecord["prescriptionId"]
+	prescriptionId, ok := medicalRecord["prescriptionId"].(string)
 	if !ok {
 		log.Println("Unable to fetch prescription field from medicalRecord")
-		return "", errors.New("Unable to fetch prescription field from medicalRecord")
-	}
-	prescriptionId, ok := prescriptionIdVal.(string)
-	if !ok {
-		log.Println("Type assertion error for prescription field")
-		return "", errors.New("Type assertion error for prescription field")
+		return "", errors.New(util.UNABLE_TO_FETCH_PRESCRIPTION_FROM_MEDICAL_RECORD)
 	}
 	return prescriptionId, nil
 }
@@ -162,7 +152,7 @@ func FetchFieldsFromMedicine(c *gin.Context, medicineId string) (int, int, int, 
 	pricePerStripVal, ok := medicineFetched["pricePerStrip"].(string)
 	if !ok {
 		log.Println("Unable to fetch pricePerStrip from medicineFetched")
-		return val, val, val, errors.New("Unable to fetch pricePerStrip from medicineFetched")
+		return val, val, val, errors.New(util.UNABLE_TO_FETCH_PRICE_PER_STRIP)
 	}
 	pricePerStrip, _ := strconv.Atoi(pricePerStripVal)
 
@@ -170,12 +160,12 @@ func FetchFieldsFromMedicine(c *gin.Context, medicineId string) (int, int, int, 
 	tabletsPerStripVal, ok := medicineFetched["tabletsPerStrip"]
 	if !ok {
 		log.Println("unable to fetch tabletsPerStrip")
-		return val, val, val, errors.New("Unable to fetch tabletsPerStrip")
+		return val, val, val, errors.New(util.UNABLE_TO_FETCH_TABLETS_PER_STRIP)
 	}
 	tabletsPerStripInt, ok := tabletsPerStripVal.(string)
 	if !ok {
 		log.Println("Type assertion from tabletsPerStrip")
-		return val, val, val, errors.New("Type assertion from tabletsPerStrip")
+		return val, val, val, errors.New(util.TABLETS_PER_STRIP_MUST_BE_VALID_TYPE)
 	}
 	tabletsPerStrip, _ := strconv.Atoi(tabletsPerStripInt)
 	log.Println("tabletsPerStrip ", tabletsPerStrip)
@@ -183,12 +173,12 @@ func FetchFieldsFromMedicine(c *gin.Context, medicineId string) (int, int, int, 
 	totalNoOfTabletsVal, ok := medicineFetched["totalNoOfTablets"]
 	if !ok {
 		log.Println("unable to fetch totalNoOfTablets")
-		return val, val, val, errors.New("Unable to fetch totalNoOfTablets")
+		return val, val, val, errors.New(util.UNABLE_TO_FETCH_TOTAL_NO_OF_TABLETS)
 	}
 	totalNoOfTabletsInt, ok := totalNoOfTabletsVal.(string)
 	if !ok {
 		log.Println("Type assertion from totalNoOfTablets")
-		return val, val, val, errors.New("Type assertion from totalNoOfTablets")
+		return val, val, val, errors.New(util.TOTAL_NO_OF_TABLETS_MUST_BE_VALID_TYPE)
 	}
 	totalNoOfTablets, _ := strconv.Atoi(totalNoOfTabletsInt)
 	log.Println("totalNoOfTablets: ", totalNoOfTablets)
@@ -205,14 +195,14 @@ func FetchMedicineFieldsFromPrescription(medicine map[string]interface{}) (strin
 	dosagePerFrequencyVal, ok := medicine["dosagePerFrequency"].(string)
 	if !ok {
 		log.Println("Unable to fetch dosagePerFrequency or type assertion")
-		return "", 0, errors.New("Unable to fetch dosagePerFrequency")
+		return "", 0, errors.New(util.UNABLE_TO_FETCH_DOSAGE_PER_FREQUENCY)
 	}
 	dosagePerFrequency, _ := strconv.Atoi(dosagePerFrequencyVal)
 
 	noOfDaysVal, ok := medicine["noOfDays"].(string)
 	if !ok {
 		log.Println("Unable to fetch noOfDays")
-		return "", 0, errors.New("Unable to fetch noOfDays")
+		return "", 0, errors.New(util.UNABLE_TO_FETCH_NO_OF_DAYS)
 	}
 	noOfDays, _ := strconv.Atoi(noOfDaysVal)
 
@@ -247,7 +237,7 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 	medicineRaw, ok := prescription["medicines"]
 	if !ok {
 		log.Println("Unable to fetch medicines from medicineRaw: ", err)
-		return nil, 0, errors.New("Unable to fetch medicines from medicineRaw")
+		return nil, 0, errors.New(util.UNABLE_TO_FETCH_MEDICINES_FROM_PRESCRIPTION)
 	}
 	var medicines []interface{}
 	switch v := medicineRaw.(type) {
@@ -256,7 +246,7 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 	case []interface{}:
 		medicines = v
 	default:
-		return nil, 0, errors.New("Invalid medicines type")
+		return nil, 0, errors.New(util.UNSUPPORTED_MEDICINE_TYPE_FROM_PRESCRIPTION)
 	}
 
 	var billMedicines []map[string]interface{}
@@ -266,7 +256,7 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 		medicine, ok := m.(map[string]interface{})
 		if !ok {
 			log.Println("Unable to fetch medicine from listOfMedicines(prescription)")
-			return nil, 0, errors.New("Unable to fetch medicines from listOfMedicines(prescription)")
+			return nil, 0, errors.New(util.UNABLE_TO_FETCH_MEDICINE_FROM_MEDICINE)
 		}
 		log.Println("medicine: ", medicine)
 
@@ -355,15 +345,10 @@ func CreateBill(c *gin.Context, patientId string) (string, error) {
 		log.Println("Error from fetchAppointmentByCode: ", err)
 		return "", err
 	}
-	medicalIdVal, exists := appointment["medicalId"]
+	medicalId, exists := appointment["medicalId"].(string)
 	if !exists {
 		log.Println("Unable to fetch medicalId from appointment")
-		return "", errors.New("Unable to fetch medicalId from appointment")
-	}
-	medicalId, ok := medicalIdVal.(string)
-	if !ok {
-		log.Println("Type assertion error for medicalId from appointment")
-		return "", errors.New("Type assertion error for medicalId from appointment")
+		return "", errors.New(util.UNABLE_TO_FETCH_MEDICAL_ID_FROM_APPOINTMENT)
 	}
 	medicalRecord, err := FetchMedicalRecordByCode(c, medicalId)
 	if err != nil {

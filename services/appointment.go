@@ -26,7 +26,7 @@ func getReceptionistID(c *gin.Context) (interface{}, error) {
 	code, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to get receptionist code from context")
-		return nil, errors.New("Error unable to get code from context")
+		return nil, errors.New(util.UNABLE_TO_FETCH_CODE_FROM_CONTEXT)
 	}
 	return code, nil
 }
@@ -57,15 +57,10 @@ func CheckForPrivileges(c *gin.Context, receptionistId, doctorId string) (map[st
 		log.Println("Error from FetchReceptionistByCode:", err)
 		return nil, err
 	}
-	recepHosCodeVal, ok := receptionist["createdBy"]
+	recepHosCode, ok := receptionist["createdBy"].(string)
 	if !ok {
 		log.Println("Error getting hospitalCode from Receptionist ")
-		return nil, errors.New("Error from getting hospitalCode from receptionist")
-	}
-	recepHosCode, ok := recepHosCodeVal.(string)
-	if !ok {
-		log.Println("Type assertion while converting recepHosCode")
-		return nil, errors.New("Type assertion converting recepHosCode")
+		return nil, errors.New(util.UNABLE_TO_FETCH_CREATED_BY_FROM_RECEPTIONIST)
 	}
 
 	doctor, err := FetchDoctorByCode(c, doctorId)
@@ -73,20 +68,15 @@ func CheckForPrivileges(c *gin.Context, receptionistId, doctorId string) (map[st
 		log.Println("Error from FetchDoctorByCode: ", err)
 		return nil, err
 	}
-	docHosCodeVal, ok := doctor["createdBy"]
+	docHosCode, ok := doctor["createdBy"].(string)
 	if !ok {
 		log.Println("Error getting hospitalCode from doctor ")
-		return nil, errors.New("Error from getting hospitalCode from doctor")
-	}
-	docHosCode, ok := docHosCodeVal.(string)
-	if !ok {
-		log.Println("Type assertion while converting docHosCode")
-		return nil, errors.New("Type assertion converting docHosCode")
+		return nil, errors.New(util.UNABLE_TO_GET_HOSPITAL_ID_FROM_DOCTOR)
 	}
 
 	if recepHosCode != docHosCode {
 		log.Println("This receptionist doesnot have access to view this doctor")
-		return nil, errors.New("This receptionist doesnot have access for this doctor")
+		return nil, errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS_TO_VIEW_DOCTOR)
 	}
 	return doctor, nil
 }
@@ -102,15 +92,15 @@ func fetchDoctorSlot(c context.Context, coll *mongo.Collection, filter bson.M) (
 	err := db.FindOne(c, coll, filter, doc)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
-			return nil, errors.New("No timeslot data found for this doctor on this date")
+			return nil, errors.New(util.NO_TIME_SLOT_AVAILABLE_FOR_THIS_DATE)
 		}
 		return nil, err
 	}
 	if off, _ := doc["isWeeklyOff"].(bool); off {
-		return nil, errors.New("Doctor weekly off — doctor not available")
+		return nil, errors.New(util.DOCTOR_WEEKLY_OFF)
 	}
 	if leave, _ := doc["isLeave"].(bool); leave {
-		return nil, errors.New("Doctor is on leave — doctor not available")
+		return nil, errors.New(util.DOCTOR_IS_ON_LEAVE)
 	}
 	return doc, nil
 }
@@ -143,10 +133,10 @@ func checkAndBookSlot(ctx context.Context, slotColl *mongo.Collection, doc map[s
 		if slot["start"].(string) == timeGiven {
 			slotFound = true
 			if !slot["isAvailable"].(bool) {
-				return errors.New("Slot is not available")
+				return errors.New(util.SLOT_UNAVAILABLE)
 			}
 			if slot["isBooked"].(bool) {
-				return errors.New("Slot already booked")
+				return errors.New(util.SLOT_ALREADY_BOOKED)
 			}
 			break
 		}
@@ -274,13 +264,11 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 		log.Println("val: ", val)
 		if !ok {
 			log.Println("Unable to fetch appointments")
-			return errors.New("Unable to fetch appointments")
+			return errors.New(util.UNABLE_TO_FIND_APPOINTMENTS_IN_PATIENT)
 		}
 		for _, a := range val {
 			if str, ok := a.(string); ok {
 				appointments = append(appointments, str)
-			} else {
-				log.Println("Non-string value in appointments:", a)
 			}
 		}
 	}
@@ -294,11 +282,11 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 		isProcessing, ok := appointment["isProcessing"].(bool)
 		if !ok {
 			log.Println("isProcessing field unable to fetch from appointment")
-			return errors.New("isProcessing field unable to fetch from latestAppointment")
+			return errors.New(util.UNABLE_TO_FETCH_IS_PROCCESSING_FIELD)
 		}
 		if isProcessing {
 			log.Println("Latestappointment is still processing,cannot create one more appointment")
-			return errors.New("LatestAppointment is still processing,cannot create one more appointment")
+			return errors.New(util.PATIENT_IS_STILL_PROCESSING)
 		}
 	}
 	appointments = append(appointments, appCode)
@@ -526,7 +514,7 @@ func FetchAllAppointment(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	collection := db.OpenCollections(util.AppointmentCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
@@ -563,7 +551,7 @@ func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, erro
 	}
 	if receptionistId.(string) != result["createdBy"].(string) {
 		log.Println("This user doesnot have access")
-		return "", errors.New("This user doesnot have access")
+		return "", errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
@@ -590,16 +578,7 @@ func DeleteAppointmentByCode(c *gin.Context, appointmentId string) (string, erro
 * Delete from cache, set in Cache
  */
 func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]interface{}) (string, error) {
-	codeVal, ok := c.Get("code")
-	if !ok {
-		log.Println("Error while fetching from context. ")
-		return "", errors.New("Error while fetching from context")
-	}
-	code, ok := codeVal.(string)
-	if !ok {
-		log.Println("Error for type assertion error to get collection. ")
-		return "", errors.New("Error while type assertion to get collection")
-	}
+	code := c.GetString("code")
 	data["updatedBy"] = code
 
 	collFromContext := c.GetString("collection")
@@ -620,19 +599,14 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		return "", err
 	}
 	if collFromContext == util.ReceptionistCollection {
-		receptionistVal, ok := appointment["createdBy"]
+		receptionist, ok := appointment["createdBy"].(string)
 		if !ok {
 			log.Println("Error while checking the value is present in it or not")
-			return "", errors.New("Error while checking the the doctorId exists")
-		}
-		receptionist, ok := receptionistVal.(string)
-		if !ok {
-			log.Println("Error during type assertion error")
-			return "", errors.New("Error type assertion error for doctorId")
+			return "", errors.New(util.UNABLE_TO_FETCH_CREATED_BY_FROM_APPOINTMENT)
 		}
 		if receptionist != code {
 			log.Println("This receptionist doesnot have access to update the appointment")
-			return "", errors.New("This receptionist doesnot have access to update the appointment")
+			return "", errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS_TO_UPDATE_APPOINTMENT)
 		}
 	}
 	if collFromContext == util.DoctorCollection {
@@ -644,11 +618,11 @@ func UpdateAppointment(c *gin.Context, appointmentId string, data map[string]int
 		hospitalIdFromApp, ok := appointment["hospitalId"].(string)
 		if !ok {
 			log.Println("Unable to get hospitalId from appointment")
-			return "", errors.New("Unable to get hospitalId from appointment")
+			return "", errors.New(util.UNABLE_TO_FETCH_HOSPITAL_ID_FROM_APPOINTMENT)
 		}
 		if hospitalIdFromApp != doctor["createdBy"].(string) {
-			log.Println("This pharmacist doesnot have access to update appointment")
-			return "", errors.New("This pharmacist doesnot have access ")
+			log.Println("This doctor doesnot have access to update appointment")
+			return "", errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE_APPOINTMENT)
 		}
 	}
 	collection := db.OpenCollections(util.AppointmentCollection)

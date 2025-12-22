@@ -118,7 +118,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return val, errors.New("failed to send OTP email")
+		return val, errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return "created successfully", nil
@@ -201,8 +201,8 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 			return nil, err
 		}
 		if age < 18 {
-			log.Println("Guardian is minor")
-			return nil, errors.New("Guardian is minor")
+			log.Println("Guardian cannot be minor")
+			return nil, errors.New(util.GUARDIAN_CANNOT_BE_MINOR)
 		}
 		guardian["age"] = age
 		collection := db.OpenCollections(util.GuardianCollection)
@@ -229,7 +229,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 		err = common.SendOTPToMail(guardian["email"].(string), subject, body)
 		if err != nil {
 			log.Println("OTP mail failed:", err)
-			return nil, errors.New("failed to send OTP mail")
+			return nil, errors.New(util.FAILED_TO_SEND_OTP)
 		}
 		log.Println("mail sent successfully")
 	}
@@ -343,11 +343,11 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 	createdByVal, ok := result["createdBy"]
 	if !ok {
 		log.Println("Error whil fetching createdBy from patient")
-		return val, errors.New("Error whil fetching createdBy from patient")
+		return val, errors.New(util.MISSING_CREATED_BY_IN_DOCUMENT)
 	}
 	if receptionistId != createdByVal.(string) {
 		log.Println("This receptionist doesnot have access")
-		return val, errors.New("This recptionist doesnot have access")
+		return val, errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS)
 	}
 	data["updatedBy"] = receptionistId
 	data["updatedAt"] = time.Now()
@@ -407,7 +407,7 @@ func FetchAllPatients(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	coll := util.PatientCollection
 	collection := db.OpenCollections(coll)
@@ -446,7 +446,7 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 	}
 	if result["createdBy"].(string) != receptionistId {
 		log.Println("User doesnot have access")
-		return "", errors.New("User doesnot have access")
+		return "", errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
@@ -454,10 +454,6 @@ func DeletePatient(c *gin.Context, patientId string) (string, error) {
 		return "", err
 	}
 	log.Println("Deleted:", deleted.DeletedCount)
-	if deleted.DeletedCount == 0 {
-		log.Println("This user doesnot have access")
-		return "", errors.New("This user doesnot have access")
-	}
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		log.Println("Error from deletedCache: ", err)

@@ -39,26 +39,17 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 		return "", err
 	}
 	data["expiryDate"] = dateStr
-	pharmacistIdVal, ok := c.Get("code")
-	if !ok {
-		log.Println("Unable to get code from context ")
-		return "", errors.New("Unable to get code from context")
-	}
-	pharmacistId, ok := pharmacistIdVal.(string)
-	if !ok {
-		log.Println("Type assertion error")
-		return "", errors.New("Type assertion error")
-	}
+	pharmacistId := c.GetString("code")
 	noOfStripsVal, ok := data["noOfStrips"].(string)
 	if !ok {
 		log.Println("Unable to get noOfStrips")
-		return "", errors.New("Unable to get noOfStrips")
+		return "", errors.New(util.UNABLE_TO_FETCH_NO_OF_STRIPS)
 	}
 	noOfStrips, _ := strconv.Atoi(noOfStripsVal)
 	tabletsPerStripVal, ok := data["tabletsPerStrip"].(string)
 	if !ok {
-		log.Println("Unable to get noOfStrips")
-		return "", errors.New("Unable to get noOfStrips")
+		log.Println("Unable to get tabletsPerStrips")
+		return "", errors.New(util.UNABLE_TO_FETCH_TABLETS_PER_STRIP)
 	}
 	tabletsPerStrip, _ := strconv.Atoi(tabletsPerStripVal)
 	data["createdBy"] = pharmacistId
@@ -75,7 +66,7 @@ func CreateMedicines(c *gin.Context, data map[string]interface{}) (string, error
 	err = db.FindOne(c, collection, filter, medicine)
 	if !errors.Is(err, mongo.ErrNoDocuments) {
 		log.Println("Medicine with same name already exists: ", err)
-		return "", errors.New("Medicine with same name already exists")
+		return "", errors.New(util.MEDICINE_ALREADY_EXISTS_WITH_THIS_NAME)
 	}
 	code, err := common.GenerateEmpCode(util.MedicineCollection)
 	if err != nil {
@@ -209,7 +200,7 @@ func FetchAllMedicines(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	collection := db.OpenCollections(util.MedicineCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
@@ -273,7 +264,7 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 	}
 	if pharmacist["createdBy"].(string) != result["hospitalId"].(string) {
 		log.Println("This pharmacist doesnot have access")
-		return "", errors.New("This pharamcist does not have access")
+		return "", errors.New(util.PHARMACIST_DOESNOT_HAVE_ACCESS)
 	}
 	update := bson.M{
 		"$set": data,
@@ -332,9 +323,5 @@ func DeleteMedicine(c *gin.Context, medicineId string) (string, error) {
 		return "", err
 	}
 	log.Println("DeletedCount: ", deleted.DeletedCount)
-	if deleted.DeletedCount == 0 {
-		log.Println("This pharmacist doesnot have access")
-		return "", errors.New("This user doesnot have access")
-	}
 	return "Deleted successfully", nil
 }

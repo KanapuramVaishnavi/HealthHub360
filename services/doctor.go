@@ -83,7 +83,7 @@ func CreateDoctor(c *gin.Context, data map[string]interface{}) (string, error) {
 	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return "", errors.New("failed to send OTP email")
+		return "", errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return "created successfully", nil
@@ -135,7 +135,7 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, doctorId string) 
 	log.Println("code: ", code)
 	if code != hospitalId {
 		log.Println("This hospitalAdmin does not have access to update")
-		return "", errors.New("This hospitalAdmin doesnot have access to update")
+		return "", errors.New(util.HOSPITAL_ADMIN_DOESNOT_HAVE_ACCESS)
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
@@ -175,29 +175,10 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 	log.Println("util :", util.Whole)
 	coll := util.DoctorCollection
 	key := util.DoctorKey + doctorId
-	isSuperAdmin, err := common.IsSuperAdmin(c)
-	if err != nil {
-		log.Println("Error from isSuperAdmin: ", err)
-		return nil, err
-	}
-
-	tenantId, err := common.GetTenantIdFromContext(c)
-	if err != nil {
-		log.Println("Error from getTenantIdFromToken ", err)
-		return nil, err
-	}
-	log.Println("tenantId from token: ", tenantId)
-
-	code, err := common.GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext(code): ", err)
-		return nil, err
-	}
-	ctxCollection, err := common.GetFromContext[string](c, "collection")
-	if err != nil {
-		log.Println("Error from getFromContext(collection): ", err)
-		return nil, err
-	}
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	ctxCollection := c.GetString("collection")
 	cached := make(map[string]interface{})
 
 	cached, exists, err := common.FetchByCodeFromCache(c, key, isSuperAdmin, tenantId, code, ctxCollection)
@@ -218,8 +199,8 @@ func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{},
 
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function")
-		return nil, errors.New("Error from the findOne function:")
+		log.Println("Error from findOne function: ", err)
+		return nil, err
 	}
 	err = common.HasAccess(isSuperAdmin, ctxCollection, tenantId, code, result)
 	if err != nil {
@@ -262,7 +243,7 @@ func FetchAllDoctors(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	collection := db.OpenCollections(util.DoctorCollection)
 	result, err := db.FindAll(c, collection, filter, nil)
@@ -284,7 +265,7 @@ func DeleteDoctor(c *gin.Context, doctorId string) (string, error) {
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to fetch code from the context")
-		return "", errors.New("Error unable to fetch code from the context")
+		return "", errors.New(util.UNABLE_TO_FETCH_CODE_FROM_CONTEXT)
 	}
 	hospitalId, ok := hospitalCodeRaw.(string)
 	if !ok {

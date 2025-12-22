@@ -94,6 +94,15 @@ func getLatestAppointmentID(patient map[string]interface{}) (string, error) {
 }
 
 func getMedicalRecordTestList(medicalRecord map[string]interface{}) ([]string, error) {
+	// isConsentVerified, ok := medicalRecord["isConsentVerified"].(bool)
+	// if !ok {
+	// 	log.Println("Unable to fetch isConsentVerified from medicalRecord ")
+	// 	return nil, errors.New(util.IS_CONSENT_VERIFIED_UNBALE_TO_FETCH)
+	// }
+	// if !isConsentVerified {
+	// 	log.Println("isConsentVerified field is not approved ")
+	// 	return nil, errors.New(util.CONSENT_NOT_APPROVED)
+	// }
 	rawTestList, ok := medicalRecord["testList"]
 	if !ok {
 		return nil, errors.New("testList missing in medicalRecord")

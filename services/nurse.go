@@ -79,7 +79,7 @@ func CreateNurse(c *gin.Context, data map[string]interface{}) (string, error) {
 	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return "", errors.New("failed to send OTP email")
+		return "", errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return "created successfully", nil
@@ -128,7 +128,7 @@ func UpdateNurse(c *gin.Context, data map[string]interface{}, nurseId string) (s
 	log.Println("hospitalId: ", hospitalId)
 	if code != hospitalId {
 		log.Println("This hospitalAdmin does not have access to update")
-		return "", errors.New("This hospitalAdmin doesnot have access")
+		return "", errors.New(util.HOSPITAL_ADMIN_DOESNOT_HAVE_ACCESS)
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
@@ -183,7 +183,7 @@ func FetchAllNurses(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	collection := db.OpenCollections(util.NurseCollection)
 	log.Println(filter)
@@ -207,30 +207,11 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 
 	coll := util.NurseCollection
 	key := util.NurseKey + nurseId
-	tenantId, err := common.GetFromContext[string](c, "tenantId")
-	if err != nil {
-		log.Println("Error while fetching tenantId from getFromContext")
-		return nil, err
-	}
-	isSuperAdmin, err := common.GetFromContext[bool](c, "isSuperAdmin")
-	if err != nil {
-		log.Println("Error while fetching isSuperAdmin from getFromContext")
-		return nil, err
-	}
-	log.Println("tenantId from context: ", tenantId)
-	log.Println("isSuperAdmin from context: ", isSuperAdmin)
-	code, err := common.GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext(code): ", err)
-		return nil, err
-	}
 
-	ctxCollection, err := common.GetFromContext[string](c, "collection")
-	if err != nil {
-		log.Println("Error from getFromContext(collection): ", err)
-		return nil, err
-	}
-
+	isSuperAdmin := c.GetBool("isSuperAdmin")
+	tenantId := c.GetString("tenantId")
+	code := c.GetString("code")
+	ctxCollection := c.GetString("collection")
 	cached, exists, err := common.FetchByCodeFromCache(c, key, isSuperAdmin, tenantId, code, ctxCollection)
 	if err != nil {
 		log.Println("Error from FetchByCodeFromCache: ", err)
@@ -249,8 +230,8 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function")
-		return nil, errors.New("Error from the findOne function:")
+		log.Println("Error from findOne function: ", err)
+		return nil, err
 	}
 	err = common.HasAccess(isSuperAdmin, ctxCollection, tenantId, code, result)
 	if err != nil {
@@ -277,7 +258,7 @@ func DeleteNurseByCode(c *gin.Context, nurseId string) (string, error) {
 	hospitalCodeRaw, ok := c.Get("code")
 	if !ok {
 		log.Println("Unable to fetch code from the context")
-		return "", errors.New("Error unable to fetch code from the context")
+		return "", errors.New(util.UNABLE_TO_FETCH_CODE_FROM_CONTEXT)
 	}
 	hospitalId, ok := hospitalCodeRaw.(string)
 	if !ok {
@@ -296,7 +277,7 @@ func DeleteNurseByCode(c *gin.Context, nurseId string) (string, error) {
 	val := result["createdBy"].(string)
 	if val != hospitalId {
 		log.Println("This hospital admin doesnot have access")
-		return "", errors.New("This hospital admin doesnot have access")
+		return "", errors.New(util.HOSPITAL_ADMIN_DOESNOT_HAVE_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {

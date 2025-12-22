@@ -67,7 +67,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 	err = common.SendOTPToMail(input["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return errors.New("failed to send OTP email")
+		return errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return nil

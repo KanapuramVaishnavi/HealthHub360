@@ -23,11 +23,7 @@ import (
  */
 func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]interface{}) (string, error) {
 	val := ""
-	receptionistId, err := common.GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext: ", err)
-		return val, err
-	}
+	receptionistId := c.GetString("code")
 	fields := []string{"name", "dob", "phoneNo", "email", "govtId", "relation"}
 	for _, field := range fields {
 		err := common.TrimIfExists(data, field)
@@ -36,7 +32,7 @@ func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]int
 			return val, err
 		}
 	}
-	err = common.HandleDOB(data)
+	err := common.HandleDOB(data)
 	if err != nil {
 		log.Println("Error from handleDOB", err)
 		return val, err
@@ -60,12 +56,12 @@ func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]int
 	}
 	createdByVal, ok := result["createdBy"]
 	if !ok {
-		log.Println("Error whil fetching createdBy from patient")
-		return val, errors.New("Error whil fetching createdBy from patient")
+		log.Println("Error while fetching createdBy from guardian")
+		return val, errors.New(util.UNABLE_TO_FETCH_CREATED_BY_FROM_GUARDIAN)
 	}
 	if receptionistId != createdByVal.(string) {
 		log.Println("This receptionist doesnot have access")
-		return val, errors.New("This recptionist doesnot have access")
+		return val, errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS)
 	}
 	data["updatedBy"] = receptionistId
 	data["updatedAt"] = time.Now()
@@ -175,7 +171,7 @@ func FetchAllGuardians(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	coll := util.GuardianCollection
 	collection := db.OpenCollections(coll)
@@ -214,7 +210,7 @@ func DeleteGuardian(c *gin.Context, guardianId string) (string, error) {
 	}
 	if result["createdBy"].(string) != receptionistId {
 		log.Println("User doesnot have access")
-		return "", errors.New("User doesnot have access")
+		return "", errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {
@@ -222,10 +218,6 @@ func DeleteGuardian(c *gin.Context, guardianId string) (string, error) {
 		return "", err
 	}
 	log.Println("Deleted:", deleted.DeletedCount)
-	if deleted.DeletedCount == 0 {
-		log.Println("This user doesnot have access")
-		return "", errors.New("This user doesnot have access")
-	}
 	err = redis.DeleteCache(c, key)
 	if err != nil {
 		log.Println("Error from deletedCache: ", err)

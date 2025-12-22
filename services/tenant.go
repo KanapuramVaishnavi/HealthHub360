@@ -70,7 +70,7 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return errors.New("failed to send OTP email")
+		return errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return nil
@@ -82,11 +82,7 @@ func CreateTenant(c *gin.Context, data map[string]interface{}) error {
 * Set in Cache
  */
 func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{}, error) {
-	superAdminId, err := common.GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext: ", err)
-		return nil, err
-	}
+	superAdminId := c.GetString("code")
 	collFromContext := c.GetString("collection")
 	if collFromContext != util.SuperAdminCollection {
 		log.Println("This user doesnot have access")
@@ -210,13 +206,13 @@ func parseTenantUpdateFields(c *gin.Context, updateData map[string]interface{}) 
 	if v, ok := updateData["dob"].(string); ok && strings.TrimSpace(v) != "" {
 		modDob, err := common.NormalizeDate(v)
 		if err != nil {
-			return nil, errors.New("invalid dob format")
+			return nil, err
 		}
 		update["dob"] = modDob
 	}
 
 	if len(update) == 0 {
-		return nil, errors.New("no valid fields to update")
+		return nil, errors.New(util.NO_FIELDS_PROVIDED_TO_UPDATE)
 	}
 
 	update["updatedAt"] = time.Now()
@@ -235,7 +231,8 @@ func updateTenantInDB(code string, update bson.M) error {
 
 	res, err := db.UpdateOne(context.Background(), collection, filter, bson.M{"$set": update})
 	if err != nil {
-		return fmt.Errorf("update failed: %v", err)
+		log.Println("Error from updateOne: ", err)
+		return err
 	}
 	log.Println(res.ModifiedCount)
 	return nil
@@ -260,7 +257,7 @@ func DeleteTenantByCode(c *gin.Context, tenantId string) error {
 	}
 	if superAdmin != res["createdBy"].(string) {
 		log.Println("User doesnot have access")
-		return errors.New("User doesnot have access")
+		return errors.New(util.SUPER_ADMIN_DOESNOT_HAVE_ACCESS)
 	}
 	delete, err := db.DeleteOne(c, collection, filter)
 	if err != nil {

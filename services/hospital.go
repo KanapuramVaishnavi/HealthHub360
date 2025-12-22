@@ -76,7 +76,7 @@ func CreateHospital(c *gin.Context, data map[string]interface{}) error {
 	err = common.SendOTPToMail(data["email"].(string), subject, body)
 	if err != nil {
 		log.Println("OTP email failed:", err)
-		return errors.New("failed to send OTP email")
+		return errors.New(util.FAILED_TO_SEND_OTP)
 	}
 	log.Println("mail sent successfully")
 	return nil
@@ -120,7 +120,7 @@ func UpdateHospital(c *gin.Context, data map[string]interface{}, hospitalId stri
 	val := value["createdBy"].(string)
 	if val != tenantId {
 		log.Println("This tenant doesnot have access")
-		return errors.New("This tenant doesnot have access")
+		return errors.New(util.TENANT_DOESNOT_HAVE_ACCESS)
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
@@ -177,12 +177,13 @@ func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interfac
 	tenantIdCache, ok := cached["tenantId"].(string)
 	if !ok {
 		fmt.Println("createdBy not found or invalid")
+		return nil, errors.New(util.UNABLE_TO_FETCH_TENANT_ID)
 	}
 	if err == nil && exists {
 		if !isSuperAdmin {
 			if tenantIdCache != tenantId {
 				log.Println("Error from the tenant which is tenant doesnot have access")
-				return nil, errors.New("Tenant doesnot have access")
+				return nil, errors.New(util.TENANT_DOESNOT_HAVE_ACCESS)
 			}
 		}
 		log.Println("From cache")
@@ -203,7 +204,7 @@ func FetchHospitalByCode(c *gin.Context, hospitalId string) (map[string]interfac
 		tenantIdFromColl := result["tenantId"].(string)
 		if tenantIdFromColl != tenantId {
 			log.Println("This tenant does not have access to fetch")
-			return nil, errors.New("This tenant does not have access to fetch")
+			return nil, errors.New(util.TENANT_DOESNOT_HAVE_ACCESS)
 		}
 	}
 
@@ -237,7 +238,7 @@ func FetchAllHospital(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("Invalid user to access ")
-		return nil, errors.New("Invalid user to access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	doc, err := db.FindAll(c, collection, filter, nil)
 	if err != nil {
@@ -257,7 +258,7 @@ func DeleteHospitalByCode(c *gin.Context, hospitalId string) (string, error) {
 	collection := db.OpenCollections(util.HospitalCollection)
 	tenantId, ok := c.Get("code")
 	if !ok {
-		return "", errors.New("unable to fetch code from context")
+		return "", errors.New(util.UNABLE_TO_FETCH_CODE_FROM_CONTEXT)
 	}
 	filter := bson.M{
 		"code": hospitalId,
@@ -269,9 +270,9 @@ func DeleteHospitalByCode(c *gin.Context, hospitalId string) (string, error) {
 		log.Println("Error from the findOne function:", err)
 		return "", err
 	}
-	if tenantId != result["createdBy"].(string) {
+	if tenantId.(string) != result["createdBy"].(string) {
 		log.Println("User doesnot have access")
-		return "", errors.New("User doesnot have access")
+		return "", errors.New(util.TENANT_DOESNOT_HAVE_ACCESS)
 	}
 	_, err = db.DeleteOne(c, collection, filter)
 	if err != nil {

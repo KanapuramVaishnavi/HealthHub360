@@ -4,11 +4,9 @@ import (
 	"HealthHub360/jobs"
 	"HealthHub360/routes"
 	"log"
-	"os"
 
 	authorization "github.com/KanapuramVaishnavi/Core/config/authorization"
-	db "github.com/KanapuramVaishnavi/Core/config/db"
-	redis "github.com/KanapuramVaishnavi/Core/config/redis"
+	server "github.com/KanapuramVaishnavi/Core/server"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -19,17 +17,22 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
+	defaultopts := server.GetDefaultOptions()
 
-	db.ConnectDB()
-	redis.ConnectRedis()
-	jobs.SeedDoctorLeaves()
-	jobs.StartDailyScheduler()
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8000"
+	options := server.Options{
+		CacheEnabled:     defaultopts.CacheEnabled,
+		MongoEnabled:     defaultopts.MongoEnabled,
+		WebServerEnabled: defaultopts.WebServerEnabled,
+		WebServerPort:    defaultopts.WebServerPort,
+		JobsEnabled:      defaultopts.JobsEnabled,
+		JobsHandler: func() {
+			jobs.SeedDoctorLeaves()
+			jobs.StartDailyScheduler()
+		},
+		WebServerPreHandler: func(r *gin.Engine) {
+			r.Use(authorization.CORSMiddleware())
+			routes.Routes(r)
+		},
 	}
-	router := gin.Default()
-	router.Use(authorization.CORSMiddleware())
-	routes.Routes(router)
-	router.Run(":" + port)
+	server.Start(options)
 }

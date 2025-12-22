@@ -73,11 +73,7 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
  */
 func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
 
-	code, err := common.GetFromContext[string](c, "code")
-	if err != nil {
-		log.Println("Error from getFromContext: ", err)
-		return err
-	}
+	code := c.GetString("code")
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
 	medicalRecordColl := db.OpenCollections(util.MedicalRecordCollection)
@@ -85,24 +81,24 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 		"code": medicalRecordId,
 	}
 	medicalRecord := make(map[string]interface{})
-	err = db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
+	err := db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
 	if err != nil {
 		log.Println("Error while fetching medicalRecord(FindOne)", err)
 		return err
 	}
 	nurseIdVal, ok := medicalRecord["nurseId"]
 	if !ok {
-		log.Println("Error while checking the value is present in it or not")
-		return errors.New("Error while checking the the nurseId exists")
+		log.Println("Error while checking the nurseId is present in it or not")
+		return errors.New(util.CHECK_NURSE_ID_EXIST_IN_DOCUMENT)
 	}
 	nurseId, ok := nurseIdVal.(string)
 	if !ok {
 		log.Println("Error during type assertion error")
-		return errors.New("Error type assertion error for nurseId")
+		return errors.New(util.INVALID_NURSE_ID)
 	}
 	if nurseId != code {
 		log.Println("This nurse doesnot have access to updatethe record")
-		return errors.New("This nurse doesnot have access to updatethe record")
+		return errors.New(util.NURSE_DOESNOT_HAVE_ACCESS_TO_UPDATE)
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
@@ -144,16 +140,7 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 * Delete from cache, set in Cache
  */
 func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
-	codeVal, ok := c.Get("code")
-	if !ok {
-		log.Println("Error while fetching  from context. ")
-		return errors.New("Error while fetching  from context")
-	}
-	code, ok := codeVal.(string)
-	if !ok {
-		log.Println("Error for type assertion error to get collection. ")
-		return errors.New("Error while type assertion to get collection")
-	}
+	code := c.GetString("code")
 	data["updatedBy"] = code
 	data["updatedAt"] = time.Now()
 	medicalRecordColl := db.OpenCollections(util.MedicalRecordCollection)
@@ -168,17 +155,17 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	}
 	doctorIdVal, ok := medicalRecord["doctorId"]
 	if !ok {
-		log.Println("Error while checking the value is present in it or not")
-		return errors.New("Error while checking the the doctorId exists")
+		log.Println("Error while checking the doctorId is present in it or not")
+		return errors.New(util.CHECK_DOCTOR_ID_EXIST_IN_DOCUMENT)
 	}
 	doctorId, ok := doctorIdVal.(string)
 	if !ok {
 		log.Println("Error during type assertion error")
-		return errors.New("Error type assertion error for doctorId")
+		return errors.New(util.INVALID_DOTOR_ID)
 	}
 	if doctorId != code {
 		log.Println("This doctor doesnot have access to update the record")
-		return errors.New("This doctor doesnot have access to update the record")
+		return errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE)
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
@@ -218,16 +205,7 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 * Delete from cache, set in Cache
  */
 func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, data map[string]interface{}) error {
-	codeVal, ok := c.Get("code")
-	if !ok {
-		log.Println("Error while fetching  from context. ")
-		return errors.New("Error while fetching  from context")
-	}
-	code, ok := codeVal.(string)
-	if !ok {
-		log.Println("Error for type assertion error to get collection. ")
-		return errors.New("Error while type assertion to get collection")
-	}
+	code := c.GetString("code")
 	pharmacist, err := FetchPharmacistByCode(c, code)
 	if err != nil {
 		log.Println("Error from fetchPharmacistByCode: ", err)
@@ -246,19 +224,14 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 		log.Println("Error while fetching medicalRecord(FindOne)", err)
 		return err
 	}
-	hospitalIdVal, ok := medicalRecord["hospitalId"]
+	hospitalId, ok := medicalRecord["hospitalId"].(string)
 	if !ok {
 		log.Println("Error while checking the value is present in it or not")
-		return errors.New("Error while checking the the hospitalId exists")
-	}
-	hospitalId, ok := hospitalIdVal.(string)
-	if !ok {
-		log.Println("Error during type assertion error(hospitalId)")
-		return errors.New("Error type assertion error for doctorId")
+		return errors.New(util.UNABLE_TO_FETCH_HOSPITAL_ID_FROM_MEDICAL_RECORD)
 	}
 	if hospitalId != doctorIdFromPharmacist {
 		log.Println("This pharmacist doesnot have access to update the record")
-		return errors.New("This pharmacist doesnot have access to update the record")
+		return errors.New(util.PHARMACIST_DOES_NOT_HAVE_ACCESS_TO_UPDATE_MEDICAL_RECORD)
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{
@@ -299,17 +272,7 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 * Delete from cache, set in Cache
  */
 func UpdateMedicalRecord(c *gin.Context, medicalRecordId string, data map[string]interface{}) (string, error) {
-	val := ""
-	collectionVal, ok := c.Get("collection")
-	if !ok {
-		log.Println("Error while fetching collection from context. ")
-		return val, errors.New("Error while fetching collection from context")
-	}
-	collection, ok := collectionVal.(string)
-	if !ok {
-		log.Println("Error for type assertion error to get collection. ")
-		return val, errors.New("Error while type assertion to get collection")
-	}
+	collection := c.GetString("collection")
 	msg := "Updated successfully"
 	switch collection {
 	case util.NurseCollection:
@@ -388,7 +351,7 @@ func FetchAllMedicalRecords(c *gin.Context) ([]interface{}, error) {
 		}
 	} else {
 		log.Println("This user doesnot have access")
-		return nil, errors.New("This user doesnot have access")
+		return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
 	doc, err := db.FindAll(c, collection, filter, nil)
@@ -425,7 +388,7 @@ func DeleteMedicalRecordByCode(c *gin.Context, medicalRecordId string) (string, 
 	}
 	if receptionistId.(string) != result["createdBy"].(string) {
 		log.Println("This user doesnot have access")
-		return "", errors.New("This user doesnot have access")
+		return "", errors.New(util.RECEPTIONIST_DOESNOT_HAVE_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {

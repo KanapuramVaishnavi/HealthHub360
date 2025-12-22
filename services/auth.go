@@ -272,13 +272,14 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 		}
 		if attempts >= 3 {
 			// Disable account in MongoDB
-			_, _ = db.UpdateOne(context.Background(),
+			updated, err := db.UpdateOne(context.Background(),
 				db.OpenCollections(collection),
 				bson.M{"code": code},
 				bson.M{"$set": bson.M{"isBlocked": true}},
 			)
 			log.Println("Error while updating the collection for isActive field")
-			return nil, errors.New("account disabled due to 3 invalid attempts")
+			log.Println("Updating: ", updated.ModifiedCount)
+			return nil, err
 		}
 
 		log.Println("Error from IncrementLoginattempts")

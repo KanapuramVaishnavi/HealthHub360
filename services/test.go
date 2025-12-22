@@ -96,11 +96,8 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
 		return err
 	}
 
-	hospitalCode, ok := c.Get("code")
-	if !ok {
-		return errors.New("unable to fetch code from context")
-	}
-	updateFilter := common.BuildUpdateFilter(data, hospitalCode.(string))
+	hospitalCode := c.GetString("code")
+	updateFilter := common.BuildUpdateFilter(data, hospitalCode)
 	filter := bson.M{
 		"code": code,
 	}
@@ -116,8 +113,8 @@ func UpdateTest(c *gin.Context, data map[string]interface{}, code string) error 
 	log.Println(val)
 	log.Println(hospitalCode)
 	if val != hospitalCode {
-		log.Println("This test does not have access to update")
-		return errors.New("This test doesnot have access")
+		log.Println("This hospital does not have access to update test")
+		return errors.New(util.HOSPITAL_ADMIN_DOESNOT_HAVE_ACCESS_TO_UPDATE_TEST)
 	}
 	res, err := db.UpdateOne(c, collection, filter, updateFilter)
 	if err != nil {
@@ -170,7 +167,7 @@ func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, err
 			return nil, errors.New("cached test missing tenantId")
 		}
 		if tenantId != tenantIdFromCache {
-			return nil, errors.New("tenant not allowed to fetch this test")
+			return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 		}
 	}
 	if err == nil && exists {
@@ -185,13 +182,13 @@ func FetchTestByCode(c *gin.Context, testId string) (map[string]interface{}, err
 	}
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne function ", err)
-		return nil, errors.New("Error from the findOne function:")
+		log.Println("Error from findOne function: ", err)
+		return nil, err
 	}
 	if !sa {
 		value := result["tenantId"].(string)
 		if value != tenantId {
-			return nil, errors.New("This User admin doesnot have access because of tenantId mismatch")
+			return nil, errors.New(util.INVALID_USER_TO_ACCESS)
 		}
 	}
 	err = redis.SetCache(c, key, result)
@@ -229,16 +226,7 @@ func FetchAllTests(c *gin.Context, tenantId string) ([]interface{}, error) {
 func DeleteTest(c *gin.Context, code string) (string, error) {
 	key := util.TestKey + code
 	collection := db.OpenCollections(util.TestCollection)
-	hospitalCodeRaw, ok := c.Get("code")
-	if !ok {
-		log.Println("Unable to fetch code from the context")
-		return "", errors.New("Error unable to fetch code from the context")
-	}
-	hospitalCode, ok := hospitalCodeRaw.(string)
-	if !ok {
-		return "", errors.New("Unable to get hospitalCode from the context")
-	}
-
+	hospitalCode := c.GetString("code")
 	filter := bson.M{
 		"code": code,
 	}
@@ -251,7 +239,7 @@ func DeleteTest(c *gin.Context, code string) (string, error) {
 	val := result["createdBy"].(string)
 	if val != hospitalCode {
 		log.Println("This hospital admin doesnot have access")
-		return "", errors.New("This hospital admin doesnot have access")
+		return "", errors.New(util.HOSPITAL_ADMIN_DOESNOT_HAVE_ACCESS)
 	}
 	err = redis.DeleteCache(c, key)
 	if err != nil {
