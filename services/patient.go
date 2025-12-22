@@ -1,6 +1,8 @@
 package services
 
 import (
+	"strconv"
+
 	db "github.com/KanapuramVaishnavi/Core/config/db"
 	redis "github.com/KanapuramVaishnavi/Core/config/redis"
 	common "github.com/KanapuramVaishnavi/Core/coreServices"
@@ -79,7 +81,17 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from CalculateAge")
 		return val, err
 	}
-	data["age"] = age
+	data["age"] = strconv.Itoa(age)
+
+	receptionist, err := FetchReceptionistByCode(c, createdBy)
+	if err != nil {
+		log.Println("Error from fetchReceptionistByCode: ", err)
+		return val, err
+	}
+	log.Println("Receptionist: ", receptionist)
+	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
+	data["hospitalId"] = receptionist["createdBy"].(string)
+
 	listOfGuardians := []string{}
 	if age < 18 {
 		if listOfGuardians, err = ValidateGuardianAndCreate(c, data, listOfGuardians, createdBy, tenantId); err != nil {
@@ -90,14 +102,6 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	}
 	log.Println("ListOfGuardians: ", listOfGuardians)
 	data["listOfGuardians"] = listOfGuardians
-	receptionist, err := FetchReceptionistByCode(c, createdBy)
-	if err != nil {
-		log.Println("Error from fetchReceptionistByCode: ", err)
-		return val, err
-	}
-	log.Println("Receptionist: ", receptionist)
-	log.Println("Receptionist(createdBy): ", receptionist["createdBy"].(string))
-	data["hospitalId"] = receptionist["createdBy"].(string)
 
 	if _, err := common.SaveUserToDB(collection, data); err != nil {
 		log.Println("Error from the saveUserToDB:", err)
@@ -190,6 +194,7 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 		}
 		log.Printf("guardian %s guardian OTP %s: ", guardianId, otp)
 		guardian["guardianId"] = guardianId
+		guardian["hospitalId"] = data["hospitalId"].(string)
 		err = common.PrepareUser(guardian, guardianId, createdBy, tenantId)
 		if err != nil {
 			log.Println("Error from prepareUser: ", err)

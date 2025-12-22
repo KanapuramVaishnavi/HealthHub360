@@ -277,7 +277,7 @@ func PatientUpdate(c *gin.Context, data map[string]interface{}, appCode, patient
 		appointment, err := FetchAppointmentByCode(c, latestAppointmentsId)
 		if err != nil {
 			log.Println("Error from fetchAppointmentByCode: ", appointment)
-			return errors.New("Error from fetchAppointmentByCode")
+			return err
 		}
 		isProcessing, ok := appointment["isProcessing"].(bool)
 		if !ok {

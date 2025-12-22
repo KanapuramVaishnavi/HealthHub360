@@ -14,6 +14,10 @@ github.com/KanapuramVaishnavi/Core v1.0.8 h1:0NNkSANtsHT+bFBnFdDPvI08ThP9BhX1max
 github.com/KanapuramVaishnavi/Core v1.0.8/go.mod h1:ZgTecV7GZDKei7eExgJK3B9lx7Zldet9afXvWNtrlmY=
 github.com/KanapuramVaishnavi/Core v1.0.9 h1:00udm9HfY0o3aNXTHracb3jOkRW+wrnY/fUYMIMPtig=
 github.com/KanapuramVaishnavi/Core v1.0.9/go.mod h1:ZgTecV7GZDKei7eExgJK3B9lx7Zldet9afXvWNtrlmY=
+github.com/KanapuramVaishnavi/Core v1.0.10 h1:JxVMo1WMnB2bjLKEQUchso6CSLRIP3HQj6iVzRRYWws=
+github.com/KanapuramVaishnavi/Core v1.0.10/go.mod h1:ZgTecV7GZDKei7eExgJK3B9lx7Zldet9afXvWNtrlmY=
+github.com/KanapuramVaishnavi/Core v1.0.12 h1:X6rHUc3L+VOqIqgs9LOTevHZzgAmwC5dQ4lLSziDSbw=
+github.com/KanapuramVaishnavi/Core v1.0.12/go.mod h1:ZgTecV7GZDKei7eExgJK3B9lx7Zldet9afXvWNtrlmY=
 github.com/KanapuramVaishnavi/Core v1.1.0 h1:G1V+w1NZFUXC6E43mE9/S4fkwR5+qlRnN0Lg+Lc3WgE=
 github.com/KanapuramVaishnavi/Core v1.1.0/go.mod h1:ZgTecV7GZDKei7eExgJK3B9lx7Zldet9afXvWNtrlmY=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=

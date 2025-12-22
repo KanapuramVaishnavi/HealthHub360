@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	db "github.com/KanapuramVaishnavi/Core/config/db"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 /*
@@ -166,6 +168,72 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	if doctorId != code {
 		log.Println("This doctor doesnot have access to update the record")
 		return errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE)
+	}
+	patientId, ok := medicalRecord["patientId"].(string)
+	if !ok {
+		log.Println("Error while fetching patientId from the medicalRecord")
+		return errors.New("Error while fetching patientId from the medicalRecord")
+	}
+	patient, err := FetchPatientByCode(c, patientId)
+	if err != nil {
+		log.Println("Error from fetchPatientByCode:  ", err)
+		return err
+	}
+	ageStr := patient["age"].(string)
+	age, err := strconv.Atoi(ageStr)
+
+	if age < 18 {
+
+		var guardians []string
+		switch v := patient["listOfGuardians"].(type) {
+		case []interface{}:
+			for _, g := range v {
+				id, ok := g.(string)
+				if !ok {
+					return errors.New("guardian id is not string")
+				}
+				guardians = append(guardians, id)
+			}
+
+		case primitive.A:
+			for _, g := range v {
+				id, ok := g.(string)
+				if !ok {
+					return errors.New("guardian id is not string")
+				}
+				guardians = append(guardians, id)
+			}
+
+		default:
+			return errors.New("invalid listOfGuardians type")
+		}
+
+		if len(guardians) == 0 {
+			return errors.New("no guardians found for minor patient")
+		}
+		for _, guardianId := range guardians {
+			guardian, err := FetchGuardianByCode(c, guardianId)
+			if err != nil {
+				log.Println("Error from fetchGuardianByCode: ", err)
+				return err
+			}
+			otp := common.GenerateOTP()
+			subject := "Guardian for consent OTP Verification"
+			body := fmt.Sprintf("Hello %s,\n\nYour OTP for consent verification is: %s\n\nThank you!", guardian["name"].(string), otp)
+			log.Printf("Mail sent to the guardian %s and otp is %s", guardian["code"].(string), otp)
+			common.SendOTPToMail(guardian["email"].(string), subject, body)
+			collection := db.OpenCollections(util.ConsentVerificationCollection)
+			consent := make(map[string]interface{})
+			consent["otp"] = otp
+			consent["guardianId"] = guardian
+			consent["collection"] = util.GuardianCollection
+			inserted, err := db.CreateOne(c, collection, consent)
+			if err != nil {
+				log.Println("Error from createOne: ", err)
+				return err
+			}
+			log.Println("Inserted document in consentVerificaton: ", inserted.InsertedID)
+		}
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
 	filter := bson.M{

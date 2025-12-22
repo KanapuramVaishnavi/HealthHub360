@@ -172,7 +172,6 @@ func UpdateDoctor(c *gin.Context, data map[string]interface{}, doctorId string) 
 * If comparision works then return the doctor
  */
 func FetchDoctorByCode(c *gin.Context, doctorId string) (map[string]interface{}, error) {
-	log.Println("util :", util.Whole)
 	coll := util.DoctorCollection
 	key := util.DoctorKey + doctorId
 	isSuperAdmin := c.GetBool("isSuperAdmin")

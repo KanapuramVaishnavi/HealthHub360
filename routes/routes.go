@@ -33,6 +33,6 @@ func Routes(r *gin.Engine) {
 	controllers.Test(r)
 	controllers.Bill(r)
 	controllers.Report(r)
-
+	controllers.Consent(r)
 	controllers.Role(r)
 }
