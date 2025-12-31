@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 
+	db "github.com/KanapuramVaishnavi/Core/config/db"
 	redis "github.com/KanapuramVaishnavi/Core/config/redis"
 	common "github.com/KanapuramVaishnavi/Core/coreServices"
 	util "github.com/KanapuramVaishnavi/Core/util"
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -19,7 +21,6 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 	if err != nil {
 		return nil, errors.New("error fetching patient by code")
 	}
-
 	appointmentId, err := getLatestAppointmentID(patient)
 	if err != nil {
 		return nil, err
@@ -29,13 +30,15 @@ func CreateTestReport(c *gin.Context, patientId string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	log.Println("latestApp: ", latestApp)
 	medicalRecordId := latestApp["medicalId"].(string)
+	log.Println("medicalRecordId: ", medicalRecordId)
 	medicalRecord, err := FetchMedicalRecordByCode(c, medicalRecordId)
 	if err != nil {
 		return nil, err
 	}
 	log.Println("MedicalRecord: ", medicalRecord)
-	testlist, err := getMedicalRecordTestList(medicalRecord)
+	testlist, err := getMedicalRecordTestList(c, medicalRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +96,17 @@ func getLatestAppointmentID(patient map[string]interface{}) (string, error) {
 	return appointmentId, nil
 }
 
-func getMedicalRecordTestList(medicalRecord map[string]interface{}) ([]string, error) {
-	isConsentVerified, ok := medicalRecord["isConsentVerified"].(bool)
+func getMedicalRecordTestList(c *gin.Context, medicalRecord map[string]interface{}) ([]string, error) {
+	consentId := medicalRecord["consentId"].(string)
+	consent, err := FetchConsentByCode(c, consentId)
+	if err != nil {
+		log.Println("Error from FetchConsentByCode: ", err)
+		return nil, err
+	}
+	isConsentVerified, ok := consent["isConsentVerified"].(bool)
 	if !ok {
-		log.Println("Unable to fetch isConsentVerified from medicalRecord ")
-		return nil, errors.New(util.IS_CONSENT_VERIFIED_UNBALE_TO_FETCH)
+		log.Println("Unable to fetch isConsentVerified from consent ")
+		return nil, errors.New(util.IS_CONSENT_VERIFIED_UNABLE_TO_FETCH)
 	}
 	if !isConsentVerified {
 		log.Println("isConsentVerified field is not approved ")
@@ -191,4 +200,59 @@ func updateMedicalRecordWithReports(c *gin.Context, medicalRecordId string, repo
 		"testReports": reports,
 	}
 	return UpdateMedicalRecordByNurse(c, medicalRecordId, data)
+}
+
+func FetchTestReportsofPatientById(c *gin.Context, testReportId string) (map[string]interface{}, error) {
+	coll := util.TestReportCollection
+	key := util.TestReportKey + testReportId
+	sa, err := common.IsSuperAdmin(c)
+	if err != nil {
+		return nil, err
+	}
+	tenantId, err := common.GetTenantIdFromContext(c)
+	if err != nil {
+		log.Println("Error from getTenantIdFromToken ", err)
+		return nil, err
+	}
+	log.Println("tenantId from token: ", tenantId)
+
+	cached := make(map[string]interface{})
+	exists, err := redis.GetCache(c, key, &cached)
+	if err == nil && exists && !sa {
+		tenantIdFromCache, ok := cached["tenantId"].(string)
+		if !ok {
+			return nil, errors.New("cached testReport missing tenantId")
+		}
+		if tenantId != tenantIdFromCache {
+			return nil, errors.New(util.INVALID_USER_TO_ACCESS)
+		}
+	}
+	if err == nil && exists {
+		log.Println("From cache")
+		return cached, nil
+	}
+
+	result := make(map[string]interface{})
+	collection := db.OpenCollections(coll)
+	filter := bson.M{
+		"code": testReportId,
+	}
+	err = db.FindOne(c, collection, filter, &result)
+	if err != nil {
+		log.Println("Error from findOne function: ", err)
+		return nil, err
+	}
+	if !sa {
+		value := result["tenantId"].(string)
+		if value != tenantId {
+			return nil, errors.New(util.INVALID_USER_TO_ACCESS)
+		}
+	}
+	err = redis.SetCache(c, key, result)
+	if err != nil {
+		log.Println("Error from setCache")
+		return nil, err
+	}
+
+	return result, nil
 }

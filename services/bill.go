@@ -141,6 +141,24 @@ func FetchPrescriptionIdFromMedicalRecord(medicalRecord map[string]interface{}) 
 	}
 	return prescriptionId, nil
 }
+func ExtractMedicines(prescription map[string]interface{}) ([]interface{}, error) {
+	medicineRaw, ok := prescription["medicines"]
+	if !ok {
+		log.Println("Unable to fetch medicines from medicineRaw")
+		return nil, errors.New(util.UNABLE_TO_FETCH_MEDICINES_FROM_PRESCRIPTION)
+	}
+	var medicines []interface{}
+	switch v := medicineRaw.(type) {
+	case primitive.A:
+		medicines = []interface{}(v)
+	case []interface{}:
+		medicines = v
+	default:
+		return nil, errors.New(util.UNSUPPORTED_MEDICINE_TYPE_FROM_PRESCRIPTION)
+	}
+	return medicines, nil
+
+}
 func FetchFieldsFromMedicine(c *gin.Context, medicineId string) (int, int, int, error) {
 	var val int
 	medicineFetched, err := FetchMedicineByCode(c, medicineId)
@@ -233,20 +251,10 @@ func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface
 		log.Println("Error from fetchPrescriptionByCode: ", err)
 		return nil, 0, err
 	}
-
-	medicineRaw, ok := prescription["medicines"]
-	if !ok {
-		log.Println("Unable to fetch medicines from medicineRaw: ", err)
-		return nil, 0, errors.New(util.UNABLE_TO_FETCH_MEDICINES_FROM_PRESCRIPTION)
-	}
-	var medicines []interface{}
-	switch v := medicineRaw.(type) {
-	case primitive.A:
-		medicines = []interface{}(v)
-	case []interface{}:
-		medicines = v
-	default:
-		return nil, 0, errors.New(util.UNSUPPORTED_MEDICINE_TYPE_FROM_PRESCRIPTION)
+	medicines, err := ExtractMedicines(prescription)
+	if err != nil {
+		log.Println("Error from extractMedicines: ", err)
+		return nil, 0, err
 	}
 
 	var billMedicines []map[string]interface{}

@@ -14,6 +14,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+const ERR_WHILE_FETCHING_SUPERADMIN string = "Error from findOne while fetching superAdmin: "
+
 /*
 CreateSuperAdmin handles creating a SuperAdmin user.
 It validates email/phone, generates employee code, fetches roleCode,
@@ -40,7 +42,7 @@ func CreateSuperAdmin(c *gin.Context, input map[string]interface{}) error {
 
 	otp, err := common.GenerateAndHashOTP(input)
 	if err != nil {
-		log.Println("Error from GeneraeAndHashOTP:", err)
+		log.Println("Error from GenerateAndHashOTP:", err)
 		return err
 	}
 	tenantId := ""
@@ -92,7 +94,7 @@ func FetchSuperAdminByCode(c *gin.Context, superAdminId string) (map[string]inte
 	}
 	err = db.FindOne(c, coll, filter, &superAdmin)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println(ERR_WHILE_FETCHING_SUPERADMIN, err)
 		return nil, err
 	}
 	return superAdmin, nil
@@ -130,7 +132,7 @@ func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]inter
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println(ERR_WHILE_FETCHING_SUPERADMIN, err)
 		return err
 	}
 	update := bson.M{
@@ -145,7 +147,7 @@ func UpdateSuperAdmin(c *gin.Context, superAdminId string, data map[string]inter
 	updatedSuperAdmin := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, &updatedSuperAdmin)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching after updating superAdmin: ", err)
 		return err
 	}
 	key := util.SuperAdminKey + superAdminId

@@ -223,11 +223,10 @@ func FetchNurseByCode(c *gin.Context, nurseId string) (map[string]interface{}, e
 
 	result := make(map[string]interface{})
 	collection := db.OpenCollections(coll)
-	log.Println("Error from getCache:", err)
 	filter := bson.M{
 		"code": nurseId,
 	}
-
+	log.Println("")
 	err = db.FindOne(c, collection, filter, &result)
 	if err != nil {
 		log.Println("Error from findOne function: ", err)

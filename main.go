@@ -2,6 +2,7 @@ package main
 
 import (
 	"HealthHub360/jobs"
+	"HealthHub360/migrations"
 	"HealthHub360/routes"
 	"log"
 
@@ -33,6 +34,13 @@ func main() {
 			r.Use(authorization.CORSMiddleware())
 			routes.Routes(r)
 		},
+		MigrationHandler: func() {
+			migrations.AddPharmacistIdField()
+			migrations.ChangeLoginAttemptsType()
+			migrations.RemovePharamcistIdFromBill()
+			migrations.UpdateLoginAttemptsInHospitalAdmin()
+		},
+		MigrationEnabled: defaultopts.MigrationEnabled,
 	}
 	server.Start(options)
 }

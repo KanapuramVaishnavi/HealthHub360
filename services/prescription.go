@@ -21,21 +21,56 @@ func VerifyHasAccess(c *gin.Context, doctorId string, medicalRecordId string) (m
 		log.Println("Error from fetchMedicalRecordByCode: ", err)
 		return nil, err
 	}
-	doctorIdVal, exists := medicalRecord["doctorId"]
+	doctorIdFromMedicalRecord, exists := medicalRecord["doctorId"].(string)
 	if !exists {
 		log.Println("doctorId doesnot exists in medicalRecord")
-		return nil, errors.New("doctorId doesnot exists in medicalRecord")
-	}
-	doctorIdFromMedicalRecord, ok := doctorIdVal.(string)
-	if !ok {
-		log.Println("Type assertion error while fetching doctorId from medicalRecord")
-		return nil, errors.New("Type assertion error while fetching doctorId from medicalRecord")
+		return nil, errors.New(util.UNABLE_TO_FETCH_DOCTOR_ID_FROM_MEDICAL_RECORD)
 	}
 	if doctorId != doctorIdFromMedicalRecord {
 		log.Println("User doesnot have access")
-		return nil, errors.New("User doesnot have access")
+		return nil, errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_CREATE_PRESCRIPTION)
 	}
 	return medicalRecord, nil
+}
+func ValidateMedicines(rawMedicines []interface{}) error {
+
+	for _, m := range rawMedicines {
+		medicine, ok := m.(map[string]interface{})
+		if !ok {
+			return errors.New("invalid medicine format")
+		}
+
+		err := ValidateMedicineFields(medicine)
+		if err != nil {
+			log.Println("Error from validateMedicineFields: ", err)
+			return err
+		}
+	}
+	return nil
+}
+func ValidateMedicineFields(medicine map[string]interface{}) error {
+	fields := []string{"medicineId", "instructions", "dosagePerFrequency", "noOfDays"}
+	for _, field := range fields {
+		err := common.GetTrimmedString(medicine, field)
+		if err != nil {
+			return err
+		}
+	}
+	frequency, ok := medicine["frequency"].(map[string]interface{})
+	if !ok {
+		log.Println("Frequency must be an object")
+		return errors.New(util.FREQUENCY_MUST_BE_AN_OBJECT)
+	}
+
+	boolFields := []string{"morning", "afternoon", "night"}
+	for _, bf := range boolFields {
+		val, ok := frequency[bf].(bool)
+		if !ok {
+			return errors.New("frequency field missing: " + bf)
+		}
+		frequency[bf] = val
+	}
+	return nil
 }
 
 /*
@@ -65,39 +100,17 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 	rawMedicines, ok := data["medicines"].([]interface{})
 	if !ok {
 		log.Println("Medicines field must be list of interface")
-		return "", errors.New("medicines must be an array")
+		return "", errors.New(util.MEDICINES_MUST_BE_ARRAY)
 	}
 	err = common.GetTrimmedString(data, "diagnosis")
 	if err != nil {
 		log.Println("Error from getTrimmedString: ", err)
 		return "", err
 	}
-	for _, m := range rawMedicines {
-		medicine, ok := m.(map[string]interface{})
-		if !ok {
-			return "", errors.New("invalid medicine format")
-		}
-
-		fields := []string{"medicineId", "instructions", "dosagePerFrequency", "noOfDays"}
-		for _, field := range fields {
-			err := common.GetTrimmedString(medicine, field)
-			if err != nil {
-				return "", err
-			}
-		}
-		frequency, ok := medicine["frequency"].(map[string]interface{})
-		if !ok {
-			return "", errors.New("frequency must be an object")
-		}
-
-		boolFields := []string{"morning", "afternoon", "night"}
-		for _, bf := range boolFields {
-			val, ok := frequency[bf].(bool)
-			if !ok {
-				return "", errors.New("frequency field missing: " + bf)
-			}
-			frequency[bf] = val
-		}
+	err = ValidateMedicines(rawMedicines)
+	if err != nil {
+		log.Println("Error from validateMedicines: ", err)
+		return "", err
 	}
 
 	tenantId, err := common.GetFromContext[string](c, "tenantId")
@@ -141,7 +154,7 @@ func CreatePrescription(c *gin.Context, data map[string]interface{}, medicalReco
 		"isProcessing": false,
 	}
 
-	_, err = UpdateAppointment(c, medicalRecord["appointmentId"].(string), updAppointment)
+	_, err = UpdateAppointmentByCode(c, medicalRecord["appointmentId"].(string), updAppointment)
 	if err != nil {
 		log.Println("Update(isProcessing) field for the latestAppointment: ", err)
 		return "", err
@@ -176,7 +189,7 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 	userData := make(map[string]interface{})
 	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne the user: ", err)
 		return nil, err
 	}
 
@@ -189,8 +202,8 @@ func FetchPrescriptionByCode(c *gin.Context, prescriptionId string) (map[string]
 
 	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
-		return nil, errors.New("record not found")
+		log.Println("Error from findOne the prescription: ", err)
+		return nil, err
 	}
 
 	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
@@ -247,7 +260,7 @@ func ValidateUpdatePrescriptionData(data map[string]interface{}, doctorId string
 		f, okay := freq.(map[string]interface{})
 		if !okay {
 			log.Println("frequency field must be object")
-			return nil, errors.New("frequency field must be object")
+			return nil, errors.New(util.FREQUENCY_MUST_BE_AN_OBJECT)
 		}
 		fields := []string{"morning", "afternoon", "night"}
 		for _, field := range fields {
@@ -300,17 +313,17 @@ func UpdatePrescription(c *gin.Context, prescriptionId string, medicineId string
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne(while fetching prescription): ", err)
 		return "", err
 	}
-	docFromPrescriptionVal, ok := result["createdBy"]
+	docFromPrescriptionVal, ok := result["createdBy"].(string)
 	if !ok {
 		log.Println("createdBy(doctor) field doesnot exists in prescription")
-		return "", errors.New("createdBy(doctor) field doesnot exists in prescription")
+		return "", errors.New(util.UNABLE_TO_FETCH_CREATED_BY_FROM_PRESCRIPTION)
 	}
-	if doctorId != docFromPrescriptionVal.(string) {
+	if doctorId != docFromPrescriptionVal {
 		log.Println("This doctor doesnot have access")
-		return "", errors.New("This doctor doesnot have access")
+		return "", errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE)
 	}
 	updateFields := bson.M{}
 	for key, value := range data {
@@ -352,7 +365,7 @@ func DeletePrescriptionByCode(c *gin.Context, prescripitonId string) (string, er
 	collection := db.OpenCollections(util.PrescriptionCollection)
 	doctorId, ok := c.Get("code")
 	if !ok {
-		return "", errors.New("unable to fetch code from context")
+		return "", errors.New(util.UNABLE_TO_FETCH_CODE_FROM_CONTEXT)
 	}
 	filter := bson.M{
 		"code": prescripitonId,
@@ -368,7 +381,7 @@ func DeletePrescriptionByCode(c *gin.Context, prescripitonId string) (string, er
 	}
 	if doctorId.(string) != result["createdBy"].(string) {
 		log.Println("This user doesnot have access")
-		return "", errors.New("This user doesnot have access")
+		return "", errors.New(util.INVALID_USER_TO_ACCESS)
 	}
 	deleted, err := db.DeleteOne(c, collection, filter)
 	if err != nil {

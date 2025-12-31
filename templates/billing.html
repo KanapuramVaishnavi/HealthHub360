@@ -1,7 +1,7 @@
-
+ 
  
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Hospital Bill</title>
@@ -128,17 +128,18 @@
 <h2>Patient Information</h2>
  
 <table>
+    <caption>Patient Information</caption>
     <tr>
-        <th>Patient Name</th><td>{{.PatientName}}</td>
-        <th>Patient ID</th><td>{{.PatientID}}</td>
+        <th id="PI">Patient Name</th><td>{{.PatientName}}</td>
+        <th id="PI">Patient ID</th><td>{{.PatientID}}</td>
     </tr>
     <tr>
-        <th>Age</th><td>{{.Age}}</td>
-        <th>Gender</th><td>{{.Gender}}</td>
+        <th id="PI">Age</th><td>{{.Age}}</td>
+        <th id="PI">Gender</th><td>{{.Gender}}</td>
     </tr>
     <tr>
-        <th>Phone</th><td>{{.Phone}}</td>
-        <th>Admission Date</th><td>{{.AdmissionDate}}</td>
+        <th id="PI">Phone</th><td>{{.Phone}}</td>
+        <th id="PI">Admission Date</th><td>{{.AdmissionDate}}</td>
     </tr>
 </table>
  
@@ -149,10 +150,11 @@
 <h2>Bill Summary</h2>
  
 <table>
+    <caption>Bill Summary</caption>
     <tr>
         
-        <th>Description</th>
-        <th>Amount (₹)</th>
+        <th id="BS">Description</th>
+        <th id="BS">Amount (₹)</th>
     </tr>
  
     <tr>
@@ -167,8 +169,8 @@
     </tr>
  
     <tr>
-        <th colspan="1" style="text-align:right">Grand Total</th>
-        <th>₹ {{.grandTotal}}</th>
+        <th id="BS" colspan="1" style="text-align:right">Grand Total</th>
+        <th id="BS">₹ {{.grandTotal}}</th>
     </tr>
 </table>
  
@@ -188,7 +190,7 @@
         <div style="text-align:center;">
             <p><strong>Scan to Pay (UPI — PhonePe / GPay / Paytm)</strong></p>
  
-            <img src="{{.DynamicQRLink}}"
+            <img src="{{.DynamicQRLink}}" alt="Hospital Logo"
                  style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
             <p><strong style="color:#54595F;">UPI ID:</strong> 9876543210@okaxis</p>
             <p><strong style="color:#54595F;">Amount:</strong> ₹ {{.grandTotal}}</p>
@@ -198,7 +200,7 @@
         <div style="text-align:center;">
             <p><strong>Scan to Pay Using Cards( Credit & Debit ),Wallets & NetBanking </strong></p>
  
-            <img src="{{.QRLink}}"
+            <img src="{{.QRLink}}" alt="Hospital Logo"
                  style="width:200px;height:200px;border:2px solid #000;border-radius:8px;">
         </div>
     </div>
@@ -218,5 +220,6 @@
  
 </body>
 </html>
+ 
  
  

@@ -52,7 +52,7 @@ func UpdateAppointment(c *gin.Context) {
 		c.JSON(400, util.FailedResponse(err))
 		return
 	}
-	updated, err := services.UpdateAppointment(c, appointmentId, data)
+	updated, err := services.UpdateAppointmentByCode(c, appointmentId, data)
 	if err != nil {
 		c.JSON(400, util.FailedResponse(err))
 		return

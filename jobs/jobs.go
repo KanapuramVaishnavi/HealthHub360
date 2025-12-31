@@ -123,7 +123,6 @@ func Generate30MinSlots(start string, end string) []map[string]interface{} {
 			"isBooked":    false,
 			"patientId":   "",
 		})
-
 		startTime = slotEnd
 	}
 	return slots
@@ -135,8 +134,8 @@ func SeedDoctorLeaves() {
 		DoctorId string
 		Date     string
 	}{
-		{"D0001", "23-12-2025"},
-		{"D0002", "22-12-2025"},
+		{"D0001", "30-12-2025"},
+		{"D0002", "29-12-2025"},
 	}
 
 	for _, leave := range staticLeaves {

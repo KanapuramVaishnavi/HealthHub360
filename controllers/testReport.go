@@ -14,6 +14,7 @@ import (
 func TestReport(router *gin.Engine) {
 	test := router.Group("/testReport")
 	test.POST("/create/:patientId", authorization.Authorize("testReport", "create"), CreateTestReport)
+	test.GET("/fetch/:testReportId", authorization.Authorize("testReport", "view"), FetchTestReportByCode)
 }
 
 /*
@@ -29,4 +30,14 @@ func CreateTestReport(c *gin.Context) {
 	}
 	log.Println(response)
 	c.JSON(200, util.SuccessResponse(response))
+}
+
+func FetchTestReportByCode(c *gin.Context) {
+	testReportId := c.Param("testReportId")
+	testReport, err := services.FetchTestByCode(c, testReportId)
+	if err != nil {
+		c.JSON(400, util.FailedResponse(err))
+		return
+	}
+	c.JSON(200, util.SuccessResponse(testReport))
 }

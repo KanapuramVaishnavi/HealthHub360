@@ -41,28 +41,28 @@ func validateLoginInput(data map[string]interface{}) error {
 	if passwordExists {
 		err := common.GetTrimmedString(data, "password")
 		if err != nil {
-			log.Println("error from getTrimmed string:", err)
+			log.Println("error from getTrimmed string for password:", err)
 			return errors.New(util.PASSWORD_NOT_PROVIDED)
 		}
 	}
 	if emailExists {
 		err := common.GetTrimmedString(data, "email")
 		if err != nil {
-			log.Println("error from getTrimmed string:", err)
+			log.Println("error from getTrimmed string for email:", err)
 			return errors.New(util.EMAIL_NOT_PROVIDED)
 		}
 	}
 	if phoneExists {
 		err := common.GetTrimmedString(data, "phoneNo")
 		if err != nil {
-			log.Println("error from getTrimmed string:", err)
+			log.Println("error from getTrimmed string for phoneNo:", err)
 			return errors.New(util.PHONE_NUMBER_NOT_PROVIDED)
 		}
 	}
 	if codeExists {
 		err := common.GetTrimmedString(data, "code")
 		if err != nil {
-			log.Println("error from getTrimmed string:", err)
+			log.Println("error from getTrimmed string for code:", err)
 			return errors.New(util.CODE_NOT_PROVIDED)
 		}
 	}
@@ -208,11 +208,60 @@ func UpdateUserAttempts(ctx context.Context, collectionName string, code string,
 	return err
 }
 
+func LoginAttempts(c *gin.Context, code string, collection, dbPassword, inputPassword string) error {
+
+	passErr := verifyPassword(dbPassword, inputPassword)
+	if passErr != nil {
+		attempts := IncrementLoginAttempts(code)
+		if err := UpdateUserAttempts(c, collection, code, attempts); err != nil {
+			log.Println("Error while updating the attempts in collection")
+			return err
+		}
+		if attempts >= 3 {
+			// Disable account in MongoDB
+			updated, err := db.UpdateOne(context.Background(),
+				db.OpenCollections(collection),
+				bson.M{"code": code},
+				bson.M{"$set": bson.M{"isBlocked": true}},
+			)
+			log.Println("Error while updating the collection for isActive field")
+			log.Println("Updating: ", updated.ModifiedCount)
+			return err
+		}
+
+		log.Println("Error from IncrementLoginattempts")
+		return passErr
+	}
+	return nil
+}
+
+func TokenGeneration(userDoc map[string]interface{}, code string, email string, collection string) (string, error) {
+
+	roleCode := userDoc["roleCode"].(string)
+	tenantId := ""
+	isSuperAdmin := false
+	if collection == util.SuperAdminCollection {
+		tenantId = ""
+		isSuperAdmin = true
+	} else {
+		tenantId = userDoc["tenantId"].(string)
+		isSuperAdmin = false
+	}
+	log.Println("Login isSuperAdmin:", isSuperAdmin)
+	log.Println("Login tenantId:", tenantId)
+	token, err := jwt.GenerateJWT(code, email, roleCode, collection, tenantId, isSuperAdmin)
+	if err != nil {
+		log.Println("Error while generating the token: ", err)
+		return "", err
+	}
+	return token, nil
+}
+
 /*
 * Pass the token
 * And update the document with the token generated
  */
-func UpdateUserToken(ctx context.Context, collectionName string, code string, token string) error {
+func UpdateUserByToken(ctx context.Context, collectionName string, code string, token string) error {
 	collection := db.OpenCollections(collectionName)
 
 	filter := bson.M{"code": code}
@@ -237,24 +286,27 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 	}
 
 	filter := buildLoginFilter(data)
-
 	loginDoc, err := FetchUser(context.Background(), filter)
 	if err != nil {
 		log.Println("error from the fetchUser function:", err)
 		return nil, err
 	}
+
 	inputPassword := data["password"].(string)
 	dbPassword := loginDoc["password"].(string)
-	fmt.Println("DB Password:", dbPassword)
-	fmt.Println("Input Password:", inputPassword)
 	collection := loginDoc["collection"].(string)
 	code := loginDoc["code"].(string)
 	email := loginDoc["email"].(string)
-	log.Println("collection: ", collection)
-	log.Println("code: ", code)
+
 	userDoc, err := FetchUserByRole(c, collection, code)
 	if err != nil {
 		log.Println("Error from FetchUserByRole", err)
+		return nil, err
+	}
+
+	err = LoginAttempts(c, code, collection, dbPassword, inputPassword)
+	if err != nil {
+		log.Println("Error from attempts:", err)
 		return nil, err
 	}
 	if userDoc["reset"] == true {
@@ -263,48 +315,14 @@ func Login(c *gin.Context, data map[string]interface{}) (map[string]interface{},
 		}
 		log.Println("while password is otp")
 	}
-	passErr := verifyPassword(dbPassword, inputPassword)
-	if passErr != nil {
-		attempts := IncrementLoginAttempts(code)
-		if err := UpdateUserAttempts(c, collection, code, attempts); err != nil {
-			log.Println("Error while updating the attempts in collection")
-			return nil, err
-		}
-		if attempts >= 3 {
-			// Disable account in MongoDB
-			updated, err := db.UpdateOne(context.Background(),
-				db.OpenCollections(collection),
-				bson.M{"code": code},
-				bson.M{"$set": bson.M{"isBlocked": true}},
-			)
-			log.Println("Error while updating the collection for isActive field")
-			log.Println("Updating: ", updated.ModifiedCount)
-			return nil, err
-		}
 
-		log.Println("Error from IncrementLoginattempts")
-		return nil, errors.New("invalid password")
-	}
-
-	roleCode := userDoc["roleCode"].(string)
-	tenantId := ""
-	isSuperAdmin := false
-	if collection == util.SuperAdminCollection {
-		tenantId = ""
-		isSuperAdmin = true
-	} else {
-		tenantId = userDoc["tenantId"].(string)
-		isSuperAdmin = false
-	}
-	log.Println("Login isSuperAdmin:", isSuperAdmin)
-	log.Println("Login tenantId:", tenantId)
-	token, err := jwt.GenerateJWT(code, email, roleCode, collection, tenantId, isSuperAdmin)
+	token, err := TokenGeneration(userDoc, code, email, collection)
 	if err != nil {
-		log.Println("Error while generating the token")
+		log.Println("Error from tokenGeneration: ", err)
 		return nil, err
 	}
 
-	if err := UpdateUserToken(c, collection, code, token); err != nil {
+	if err := UpdateUserByToken(c, collection, code, token); err != nil {
 		log.Println("Error while updating the collection with token field")
 		return nil, err
 	}

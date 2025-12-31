@@ -17,6 +17,9 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+const FAILED_TO_DELETE_OLD_MEDICAL_RECORD string = "Failed deleting old medicalRecord cache:"
+const FAILED_CACHCING_UPDATED_MEDICAL_RECORD string = "Failed caching updated medicalRecord:"
+
 /*
 * Get medicalRecord from the given medicalRecordId
 * Get tenantId,code,collection,isSuperAdmin from the context
@@ -36,9 +39,11 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 
 	collectionFromContext := db.OpenCollections(collFromContext)
 	userData := make(map[string]interface{})
-	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
+	log.Println("collFromContext: ", collFromContext)
+	log.Println("filter: ", bson.M{"code": code})
+	err := db.FindOne(c.Request.Context(), collectionFromContext, bson.M{"code": code}, &userData)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching user: ", err)
 		return nil, err
 	}
 
@@ -51,7 +56,7 @@ func FetchMedicalRecordByCode(c *gin.Context, medicalRecordId string) (map[strin
 
 	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching medicalRecord: ", err)
 		return nil, err
 	}
 	if err := common.CanAccess(userData, result, tenantId, code, collFromContext, isSuperAdmin); err != nil {
@@ -85,7 +90,7 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 	medicalRecord := make(map[string]interface{})
 	err := db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
 	if err != nil {
-		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		log.Println("Error while fetching medicalRecord(FindOne) by nurse", err)
 		return err
 	}
 	nurseIdVal, ok := medicalRecord["nurseId"]
@@ -114,22 +119,95 @@ func UpdateMedicalRecordByNurse(c *gin.Context, medicalRecordId string, data map
 		log.Println("Error while updating medicalRecord by nurse:", err)
 		return err
 	}
-	log.Println("Updated: ", updated.ModifiedCount)
+	log.Println("UpdatedCount(byNurse): ", updated.ModifiedCount)
 	updatedRecord := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, &updatedRecord)
 	if err != nil {
-		log.Println("Error from findOne after updating", err)
+		log.Println("Error from findOne after updating medicalRecord byNurse", err)
 		return err
 	}
 	key := util.MedicalRecordKey + medicalRecordId
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err := redis.DeleteCache(c, key); err != nil {
-		log.Println("Failed deleting old medicalRecord cache:", err)
+		log.Println(FAILED_TO_DELETE_OLD_MEDICAL_RECORD, err)
 	}
 
 	if err := redis.SetCache(c, key, result); err != nil {
-		log.Println("Failed caching updated medicalRecord:", err)
+		log.Println(FAILED_CACHCING_UPDATED_MEDICAL_RECORD, err)
+	}
+	return nil
+}
+
+func FetchGuardians(patient map[string]interface{}) ([]string, error) {
+
+	var guardians []string
+	switch v := patient["listOfGuardians"].(type) {
+	case []interface{}:
+		for _, g := range v {
+			id, ok := g.(string)
+			if !ok {
+				return nil, errors.New("guardian id is not string")
+			}
+			guardians = append(guardians, id)
+		}
+
+	case primitive.A:
+		for _, g := range v {
+			id, ok := g.(string)
+			if !ok {
+				return nil, errors.New("guardian id is not string")
+			}
+			guardians = append(guardians, id)
+		}
+
+	default:
+		return nil, errors.New("invalid listOfGuardians type")
+	}
+	return guardians, nil
+}
+
+func CreateConsentVerification(c *gin.Context, guardians []string, patientId string) error {
+	for _, guardianId := range guardians {
+		guardian, err := FetchGuardianByCode(c, guardianId)
+		if err != nil {
+			log.Println("Error from fetchGuardianByCode: ", err)
+			return err
+		}
+		otp := common.GenerateOTP()
+		subject := "Guardian for consent OTP Verification"
+		body := fmt.Sprintf("Hello %s,\n\nYour OTP for consent verification is: %s\n\nThank you!", guardian["name"].(string), otp)
+		log.Printf("Mail sent to the guardian %s and otp is %s", guardian["code"].(string), otp)
+		common.SendOTPToMail(guardian["email"].(string), subject, body)
+		collection := db.OpenCollections(util.ConsentVerificationCollection)
+		consent := make(map[string]interface{})
+		consent["otp"] = otp
+		consent["patientId"] = patientId
+		consent["guardianId"] = guardianId
+		consent["collection"] = util.GuardianCollection
+		inserted, err := db.CreateOne(c, collection, consent)
+		if err != nil {
+			log.Println("Error from createOne: ", err)
+			return err
+		}
+		log.Println("Inserted document in consentVerificaton: ", inserted.InsertedID)
+	}
+	return nil
+}
+func VerifyDoctorCanAccess(medicalRecord map[string]interface{}, code string) error {
+	doctorIdVal, ok := medicalRecord["doctorId"]
+	if !ok {
+		log.Println("Error while checking the doctorId is present in it or not")
+		return errors.New(util.CHECK_DOCTOR_ID_EXIST_IN_DOCUMENT)
+	}
+	doctorId, ok := doctorIdVal.(string)
+	if !ok {
+		log.Println("Error during type assertion error")
+		return errors.New(util.INVALID_DOTOR_ID)
+	}
+	if doctorId != code {
+		log.Println("This doctor doesnot have access to update the record")
+		return errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE)
 	}
 	return nil
 }
@@ -152,22 +230,13 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	medicalRecord := make(map[string]interface{})
 	err := db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
 	if err != nil {
-		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		log.Println("Error while fetching medicalRecord(FindOne) by doctor", err)
 		return err
 	}
-	doctorIdVal, ok := medicalRecord["doctorId"]
-	if !ok {
-		log.Println("Error while checking the doctorId is present in it or not")
-		return errors.New(util.CHECK_DOCTOR_ID_EXIST_IN_DOCUMENT)
-	}
-	doctorId, ok := doctorIdVal.(string)
-	if !ok {
-		log.Println("Error during type assertion error")
-		return errors.New(util.INVALID_DOTOR_ID)
-	}
-	if doctorId != code {
-		log.Println("This doctor doesnot have access to update the record")
-		return errors.New(util.DOCTOR_DOESNOT_HAVE_ACCESS_TO_UPDATE)
+	err = VerifyDoctorCanAccess(medicalRecord, code)
+	if err != nil {
+		log.Println("Error from verifyDoctorCanAccess: ", err)
+		return nil
 	}
 	patientId, ok := medicalRecord["patientId"].(string)
 	if !ok {
@@ -183,56 +252,18 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 	age, err := strconv.Atoi(ageStr)
 
 	if age < 18 {
-
-		var guardians []string
-		switch v := patient["listOfGuardians"].(type) {
-		case []interface{}:
-			for _, g := range v {
-				id, ok := g.(string)
-				if !ok {
-					return errors.New("guardian id is not string")
-				}
-				guardians = append(guardians, id)
-			}
-
-		case primitive.A:
-			for _, g := range v {
-				id, ok := g.(string)
-				if !ok {
-					return errors.New("guardian id is not string")
-				}
-				guardians = append(guardians, id)
-			}
-
-		default:
-			return errors.New("invalid listOfGuardians type")
+		guardians, err := FetchGuardians(patient)
+		if err != nil {
+			log.Println("Error from fetchGuardians: ", err)
+			return err
 		}
-
 		if len(guardians) == 0 {
 			return errors.New("no guardians found for minor patient")
 		}
-		for _, guardianId := range guardians {
-			guardian, err := FetchGuardianByCode(c, guardianId)
-			if err != nil {
-				log.Println("Error from fetchGuardianByCode: ", err)
-				return err
-			}
-			otp := common.GenerateOTP()
-			subject := "Guardian for consent OTP Verification"
-			body := fmt.Sprintf("Hello %s,\n\nYour OTP for consent verification is: %s\n\nThank you!", guardian["name"].(string), otp)
-			log.Printf("Mail sent to the guardian %s and otp is %s", guardian["code"].(string), otp)
-			common.SendOTPToMail(guardian["email"].(string), subject, body)
-			collection := db.OpenCollections(util.ConsentVerificationCollection)
-			consent := make(map[string]interface{})
-			consent["otp"] = otp
-			consent["guardianId"] = guardian
-			consent["collection"] = util.GuardianCollection
-			inserted, err := db.CreateOne(c, collection, consent)
-			if err != nil {
-				log.Println("Error from createOne: ", err)
-				return err
-			}
-			log.Println("Inserted document in consentVerificaton: ", inserted.InsertedID)
+		err = CreateConsentVerification(c, guardians, patientId)
+		if err != nil {
+			log.Println("Error from createConsentVerification: ", err)
+			return err
 		}
 	}
 	collection := db.OpenCollections(util.MedicalRecordCollection)
@@ -247,20 +278,20 @@ func UpdateMedicalRecordByDoctor(c *gin.Context, medicalRecordId string, data ma
 		log.Println("Error while updating medicalRecord by doctor:", err)
 		return err
 	}
-	log.Println("Updated: ", updated.ModifiedCount)
+	log.Println("UpdatedCount(medicalRecord): ", updated.ModifiedCount)
 	updatedRecord := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, updatedRecord)
 	if err != nil {
-		log.Println("Error from findOne after updating", err)
+		log.Println("Error from findOne after updating medicalRecord byDoctor", err)
 		return err
 	}
 	key := util.MedicalRecordKey + medicalRecordId
 	if err := redis.DeleteCache(c, key); err != nil {
-		log.Println("Failed deleting old medicalRecord cache:", err)
+		log.Println(FAILED_TO_DELETE_OLD_MEDICAL_RECORD, err)
 	}
 
 	if err := redis.SetCache(c, key, updatedRecord); err != nil {
-		log.Println("Failed caching updated medicalRecord:", err)
+		log.Println(FAILED_CACHCING_UPDATED_MEDICAL_RECORD, err)
 	}
 	return nil
 }
@@ -289,7 +320,7 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 	medicalRecord := make(map[string]interface{})
 	err = db.FindOne(c, medicalRecordColl, mFilter, &medicalRecord)
 	if err != nil {
-		log.Println("Error while fetching medicalRecord(FindOne)", err)
+		log.Println("Error while fetching medicalRecord(FindOne) by pharmacist", err)
 		return err
 	}
 	hospitalId, ok := medicalRecord["hospitalId"].(string)
@@ -313,20 +344,20 @@ func UpdateMedicalRecordByPharmacist(c *gin.Context, medicalRecordId string, dat
 		log.Println("Error while updating medicalRecord by doctor:", err)
 		return err
 	}
-	log.Println("Updated: ", updated.ModifiedCount)
+	log.Println("UpdatedCount(byPharmacist): ", updated.ModifiedCount)
 	updatedRecord := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, updatedRecord)
 	if err != nil {
-		log.Println("Error from findOne after updating", err)
+		log.Println("Error from findOne after updating medicalRecord by pharmacist", err)
 		return err
 	}
 	key := util.MedicalRecordKey + medicalRecordId
 	if err := redis.DeleteCache(c, key); err != nil {
-		log.Println("Failed deleting old medicalRecord cache:", err)
+		log.Println(FAILED_TO_DELETE_OLD_MEDICAL_RECORD, err)
 	}
 
 	if err := redis.SetCache(c, key, updatedRecord); err != nil {
-		log.Println("Failed caching updated medicalRecord:", err)
+		log.Println(FAILED_CACHCING_UPDATED_MEDICAL_RECORD, err)
 	}
 	return nil
 }

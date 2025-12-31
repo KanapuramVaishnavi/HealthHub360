@@ -44,12 +44,19 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		log.Println("Error from fetchRoleDocAndCollection:", err)
 		return val, err
 	}
+	receptionistId := c.GetString("code")
+	receptionist, err := FetchReceptionistByCode(c, receptionistId)
+	if err != nil {
+		log.Println("Error from fetchReceptionistByCode: ", err)
+		return val, err
+	}
 	code, createdBy, err := common.CheckerAndGenerateUserCodes(c, collection, data["email"].(string), data["phoneNo"].(string))
 	if err != nil {
 		log.Println("Error from GenerateUserRole", err)
 		return val, err
 	}
 	log.Println(code)
+
 	otp, err := common.GenerateAndHashOTP(data)
 	if err != nil {
 		log.Println("Error from GeneraeAndHashOTP:", err)
@@ -83,7 +90,7 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	}
 	data["age"] = strconv.Itoa(age)
 
-	receptionist, err := FetchReceptionistByCode(c, createdBy)
+	receptionist, err = FetchReceptionistByCode(c, createdBy)
 	if err != nil {
 		log.Println("Error from fetchReceptionistByCode: ", err)
 		return val, err

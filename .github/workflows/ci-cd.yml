@@ -53,19 +53,19 @@ jobs:
     - name: Push Image
       run: docker push $IMAGE
 
-    # 7️⃣ Deploy (EC2 example)
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@v0.1.9
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ec2-user
-        key: ${{ secrets.EC2_KEY }}
-        script: |
-          docker pull $IMAGE
-          docker stop healthhub360 || true
-          docker rm healthhub360 || true
-          docker run -d \
-            --env-file /opt/healthhub/.env \
-            -p 8080:8080 \
-            --name healthhub360 \
-            $IMAGE
+    # # 7️⃣ Deploy (EC2 example)
+    # - name: Deploy to EC2
+    #   uses: appleboy/ssh-action@v0.1.9
+    #   with:
+    #     host: ${{ secrets.EC2_HOST }}
+    #     username: ec2-user
+    #     key: ${{ secrets.EC2_KEY }}
+    #     script: |
+    #       docker pull $IMAGE
+    #       docker stop healthhub360 || true
+    #       docker rm healthhub360 || true
+    #       docker run -d \
+    #         --env-file /opt/healthhub/.env \
+    #         -p 8080:8080 \
+    #         --name healthhub360 \
+    #         $IMAGE

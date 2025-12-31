@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Patient & Hospital Report</title>
@@ -177,6 +177,7 @@ The patient reported Symptoms. After evaluation, the diagnosis was identified an
  
 <h2>Hospital Information</h2>
 <table>
+    <caption>HI</caption>
     <tr><th>Registration ID</th><td>{{.HospitalRegID}}</td></tr>
     <tr><th>Hospital Name</th><td>{{.HospitalName}}</td></tr>
     <tr><th>Address</th><td>{{.HospitalAddress}}</td></tr>
@@ -189,6 +190,7 @@ The patient reported Symptoms. After evaluation, the diagnosis was identified an
  
 <h2>Patient Information</h2>
 <table>
+    <caption>PI</caption>
      <tr><th>Patient ID</th><td>{{.PatientID}}</td></tr>
      <tr><th>Patient Name</th><td>{{.PatientName}}</td></tr>
      <tr><th>Age</th><td>{{.Age}}</td></tr>
@@ -202,6 +204,7 @@ The patient reported Symptoms. After evaluation, the diagnosis was identified an
  
 <h2>Doctors</h2>
 <table>
+    <caption>Doctors</caption>
     <tr>
         <th>S.No</th>
         <th>Doctor ID</th>
@@ -224,6 +227,7 @@ The patient reported Symptoms. After evaluation, the diagnosis was identified an
  
 <h2>Appointments</h2>
 <table>
+    <caption>Appointments</caption>
     <tr>
         <th>AppointmentID</th>
         <th>Appointment Date</th>
@@ -246,6 +250,7 @@ The patient reported Symptoms. After evaluation, the diagnosis was identified an
 <p>During the <strong>Medical evaluation</strong>, the following conditions were reviewed:</p>
  
 <table>
+    <caption>Medical Details</caption>
     <tr>
         <th>S.No</th>
         <th>Appointment ID</th>

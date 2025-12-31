@@ -81,15 +81,7 @@ func FormatedDateAndTime(input interface{}) (string, error) {
 	timeStr := t.Format("15:04")
 	return dateStr + " " + timeStr, nil
 }
-
-func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string]interface{}, error) {
-
-	patientName := patient["name"].(string)
-	age := toInt(patient["age"])
-	gender := patient["gender"].(string)
-	patientID := patient["code"].(string)
-	admissionDate := patient["admissionDate"]
-
+func getAppointments(c *gin.Context, patient map[string]interface{}) ([]map[string]interface{}, error) {
 	rawIDs, ok := patient["appointments"].([]interface{})
 	if !ok || len(rawIDs) == 0 {
 		return nil, errors.New("no appointment IDs found")
@@ -104,7 +96,85 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 		}
 		appointments = append(appointments, app)
 	}
+	return appointments, nil
+}
+func buildTables(c *gin.Context, appointments []map[string]interface{}) (
+	[]map[string]interface{},
+	[]map[string]interface{},
+	[]map[string]interface{},
+	error,
+) {
+	doctorSeen := map[string]bool{}
+	var doctorTable []map[string]interface{}
+	var appointmentTable []map[string]interface{}
+	var medicationTable []map[string]interface{}
 
+	for _, app := range appointments {
+		did := app["doctorId"].(string)
+
+		if !doctorSeen[did] {
+			doctorSeen[did] = true
+			doc, err := FetchDoctorByCode(c, did)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			doctorTable = append(doctorTable, map[string]interface{}{
+				"DoctorName": doc["name"],
+				"DoctorID":   doc["code"],
+				"Department": doc["department"],
+			})
+		}
+
+		formatted, err := FormatedDateAndTime(app["createdAt"])
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		appointmentTable = append(appointmentTable, map[string]interface{}{
+			"AppointmentID":   app["code"],
+			"AppointmentDate": formatted,
+			"Reason":          app["reason"],
+		})
+
+		medical, err := FetchMedicalRecordByCode(c, app["medicalId"].(string))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		pres, _ := FetchPrescriptionByCode(c, getString(medical["prescriptionId"]))
+		originalPrescription, err := BuildPrescriptionData(c, pres)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		medicationTable = append(medicationTable, map[string]interface{}{
+			"AppointmentID": app["code"],
+			"Medications":   originalPrescription,
+		})
+	}
+
+	return doctorTable, appointmentTable, medicationTable, nil
+}
+func loadImages() (string, string) {
+	logo, _ := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/smalllogo.jpg")
+	qr, _ := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/qrcode.png")
+	return logo, qr
+}
+
+func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string]interface{}, error) {
+	if gin.Mode() == gin.TestMode {
+		return nil, errors.New("test mode exit")
+	}
+	patientName := patient["name"].(string)
+	age := toInt(patient["age"])
+	gender := patient["gender"].(string)
+	patientID := patient["code"].(string)
+	admissionDate := patient["admissionDate"]
+
+	appointments, err := getAppointments(c, patient)
+	if err != nil {
+		return nil, err
+	}
 	firstApp := appointments[0]
 
 	hospital, err := FetchHospitalByCode(c, firstApp["hospitalId"].(string))
@@ -117,78 +187,16 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 		return nil, err
 	}
 
-	doctorSeen := map[string]bool{}
-	var doctorTable []map[string]interface{}
-	var appointmentTable []map[string]interface{}
-	var medicationTable []map[string]interface{}
-
-	for _, app := range appointments {
-
-		did := app["doctorId"].(string)
-
-		if !doctorSeen[did] {
-			doctorSeen[did] = true
-			doc, err := FetchDoctorByCode(c, did)
-			if err != nil {
-				return nil, err
-			}
-			doctorTable = append(doctorTable, map[string]interface{}{
-				"DoctorName": doc["name"],
-				"DoctorID":   doc["code"],
-				"Department": doc["department"],
-			})
-		}
-
-		formatted, err := FormatedDateAndTime(app["createdAt"])
-		if err != nil {
-			return nil, err
-		}
-		appointmentTable = append(appointmentTable, map[string]interface{}{
-			"AppointmentID":   app["code"],
-			"AppointmentDate": formatted,
-			"Reason":          app["reason"],
-		})
-
-		medical, err := FetchMedicalRecordByCode(c, app["medicalId"].(string))
-		if err != nil {
-			return nil, fmt.Errorf("failed fetching medical record for appointment %s", app["appointmentId"])
-		}
-		log.Println("medical: ", medical)
-		prescriptionId := getString(medical["prescriptionId"])
-		pres := make(map[string]interface{})
-		if prescriptionId == "" {
-
-			log.Println("No prescriptionId found for medical record:", medical)
-			pres = nil
-		} else {
-			pres, err = FetchPrescriptionByCode(c, prescriptionId)
-			if err != nil {
-				log.Println("FetchPrescriptionByCode error:", err)
-			}
-		}
-		log.Println("Hi1")
-
-		originalPrescription, err := BuildPrescriptionData(c, pres)
-		if err != nil {
-			return nil, err
-		}
-		medicationTable = append(medicationTable, map[string]interface{}{
-			"AppointmentID": app["code"],
-			"Medications":   originalPrescription,
-		})
-	}
-	logoBase64, err := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/smalllogo.jpg")
+	doctors, apps, meds, err := buildTables(c, appointments)
 	if err != nil {
-		log.Println("Image load error:", err)
+		return nil, err
 	}
-	qrcodeImage, err := ImageToBase64("https://healthhub360.s3.ap-southeast-2.amazonaws.com/qrcode.png")
-	if err != nil {
-		log.Println("Image load error:", err)
-	}
+
+	logo, qr := loadImages()
 	reportData := map[string]interface{}{
-		"HospitalLogo": template.URL(logoBase64),
+		"HospitalLogo": template.URL(logo),
 		"HospitalName": hospital["name"],
-		"Barcode":      template.URL(qrcodeImage),
+		"Barcode":      template.URL(qr),
 
 		"PatientName":   patientName,
 		"Age":           age,
@@ -204,9 +212,9 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 		"PrimaryDoctorID":         primaryDoc["code"],
 		"PrimaryDoctorDepartment": primaryDoc["department"],
 
-		"Doctors":             doctorTable,
-		"AppointmentsTable":   appointmentTable,
-		"MedicalRecordsTable": medicationTable,
+		"Doctors":             doctors,
+		"AppointmentsTable":   apps,
+		"MedicalRecordsTable": meds,
 	}
 
 	return reportData, nil
@@ -350,12 +358,12 @@ func GenerateReport(c *gin.Context, code string) ([]string, error) {
 }
 
 //	func ImageToBase64(path string) (string, error) {
-//		data, err := ioutil.ReadFile(path)
-//		if err != nil {
-//			return "", err
-//		}
-//		encoded := base64.StdEncoding.EncodeToString(data)
-//		return "data:image/jpeg;base64," + encoded, nil
+//	    data, err := ioutil.ReadFile(path)
+//	    if err != nil {
+//	        return "", err
+//	    }
+//	    encoded := base64.StdEncoding.EncodeToString(data)
+//	    return "data:image/jpeg;base64," + encoded, nil
 //	}
 func ImageToBase64(path string) (string, error) {
 

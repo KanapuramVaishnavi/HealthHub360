@@ -18,18 +18,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+var RCBE string = "roleCode cannot be empty"
+
 func ValidateRoleData(data map[string]interface{}) (string, []map[string]interface{}, error) {
-
-	roleNameRaw, exists := data["roleName"]
-	if !exists {
-		return "", nil, errors.New("roleName is required")
+	roleName, err := getStringField(data, "roleName", true)
+	if err != nil {
+		return "", nil, err
 	}
-
-	roleName, ok := roleNameRaw.(string)
-	if !ok || strings.TrimSpace(roleName) == "" {
-		return "", nil, errors.New("roleName cannot be empty")
-	}
-	roleName = strings.ToUpper(strings.TrimSpace(roleName))
+	roleName = strings.ToUpper(roleName)
 
 	privilegesRaw, exists := data["privileges"]
 	if !exists {
@@ -41,55 +37,74 @@ func ValidateRoleData(data map[string]interface{}) (string, []map[string]interfa
 		return "", nil, errors.New("privileges cannot be empty")
 	}
 
-	privileges := make([]map[string]interface{}, 0)
+	privileges := make([]map[string]interface{}, 0, len(privList))
 	moduleSet := make(map[string]bool)
 
 	for i, p := range privList {
-		item, ok := p.(map[string]interface{})
-		if !ok {
-			return "", nil, fmt.Errorf("invalid privilege at index %d", i)
+		priv, err := validatePrivilege(p, i, moduleSet)
+		if err != nil {
+			return "", nil, err
 		}
-
-		moduleRaw, exists := item["module"]
-		if !exists {
-			return "", nil, fmt.Errorf("module is missing at index %d", i)
-		}
-		module, ok := moduleRaw.(string)
-		if !ok || strings.TrimSpace(module) == "" {
-			return "", nil, fmt.Errorf("module cannot be empty at index %d", i)
-		}
-		module = strings.TrimSpace(module)
-
-		if moduleSet[module] {
-			return "", nil, fmt.Errorf("duplicate module found: %s", module)
-		}
-		moduleSet[module] = true
-		item["module"] = module
-
-		accessRaw, exists := item["access"]
-		if !exists {
-			return "", nil, fmt.Errorf("access is required for module %s", module)
-		}
-		accessListRaw, ok := accessRaw.([]interface{})
-		if !ok || len(accessListRaw) == 0 {
-			return "", nil, fmt.Errorf("access list cannot be empty for module %s", module)
-		}
-
-		accessList := make([]string, 0)
-		for _, a := range accessListRaw {
-			str, ok := a.(string)
-			if !ok || strings.TrimSpace(str) == "" {
-				return "", nil, fmt.Errorf("invalid access value for module %s", module)
-			}
-			accessList = append(accessList, str)
-		}
-		item["access"] = accessList
-
-		privileges = append(privileges, item)
+		privileges = append(privileges, priv)
 	}
 
 	return roleName, privileges, nil
 }
+
+// Helper: Get a string field and validate emptiness
+func getStringField(data map[string]interface{}, key string, required bool) (string, error) {
+	valRaw, exists := data[key]
+	if required && !exists {
+		return "", fmt.Errorf("%s is required", key)
+	}
+	val, ok := valRaw.(string)
+	if !ok || strings.TrimSpace(val) == "" {
+		return "", fmt.Errorf("%s cannot be empty", key)
+	}
+	return strings.TrimSpace(val), nil
+}
+
+// Helper: Validate single privilege
+func validatePrivilege(p interface{}, index int, moduleSet map[string]bool) (map[string]interface{}, error) {
+	item, ok := p.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid privilege at index %d", index)
+	}
+
+	module, err := getStringField(item, "module", true)
+	if err != nil {
+		return nil, fmt.Errorf("%s at index %d", err.Error(), index)
+	}
+
+	if moduleSet[module] {
+		return nil, fmt.Errorf("duplicate module found: %s", module)
+	}
+	moduleSet[module] = true
+	item["module"] = module
+
+	accessRaw, exists := item["access"]
+	if !exists {
+		return nil, fmt.Errorf("access is required for module %s", module)
+	}
+
+	accessListRaw, ok := accessRaw.([]interface{})
+	if !ok || len(accessListRaw) == 0 {
+		return nil, fmt.Errorf("access list cannot be empty for module %s", module)
+	}
+
+	accessList := make([]string, 0, len(accessListRaw))
+	for _, a := range accessListRaw {
+		str, ok := a.(string)
+		if !ok || strings.TrimSpace(str) == "" {
+			return nil, fmt.Errorf("invalid access value for module %s", module)
+		}
+		accessList = append(accessList, strings.TrimSpace(str))
+	}
+	item["access"] = accessList
+
+	return item, nil
+}
+
 func PrepareRole(c *gin.Context, data map[string]interface{}, roleName string, privileges []map[string]interface{}) (map[string]interface{}, error) {
 	data["roleName"] = roleName
 	data["privileges"] = privileges
@@ -321,30 +336,47 @@ parsePrivileges converts []interface{} into []map[string]interface{}
 and ensures access list is []string.
 */
 func parsePrivileges(raw []interface{}) []map[string]interface{} {
-	privs := make([]map[string]interface{}, 0)
+	privs := make([]map[string]interface{}, 0, len(raw))
 
 	for _, item := range raw {
-		if m, ok := item.(map[string]interface{}); ok {
-
-			if module, ok := m["module"].(string); ok {
+		if m, ok := toMap(item); ok {
+			if module, ok := getStringNow(m, "module"); ok {
 				m["module"] = module
 			}
-
-			if accessRaw, exists := m["access"].([]interface{}); exists {
-				accessList := make([]string, 0)
-				for _, a := range accessRaw {
-					if str, ok := a.(string); ok {
-						accessList = append(accessList, str)
-					}
-				}
-				m["access"] = accessList
+			if accessRaw, ok := m["access"].([]interface{}); ok {
+				m["access"] = parseAccessList(accessRaw)
 			}
-
 			privs = append(privs, m)
 		}
 	}
 
 	return privs
+}
+
+// Helper: Get string value from map
+func getStringNow(m map[string]interface{}, key string) (string, bool) {
+	val, ok := m[key].(string)
+	if ok {
+		return val, true
+	}
+	return "", false
+}
+
+// Helper: Convert interface{} to map[string]interface{}
+func toMap(i interface{}) (map[string]interface{}, bool) {
+	m, ok := i.(map[string]interface{})
+	return m, ok
+}
+
+// Helper: Convert []interface{} to []string
+func parseAccessList(raw []interface{}) []string {
+	list := make([]string, 0, len(raw))
+	for _, a := range raw {
+		if str, ok := a.(string); ok {
+			list = append(list, str)
+		}
+	}
+	return list
 }
 
 /*
@@ -387,7 +419,7 @@ UpdateRole handles updating an existing role:
 func UpdateRole(c *gin.Context, roleCode string, updateData map[string]interface{}) (map[string]interface{}, error) {
 
 	if strings.TrimSpace(roleCode) == "" {
-		return nil, errors.New("roleCode cannot be empty")
+		return nil, errors.New(RCBE)
 	}
 
 	updateFields, err := parseUpdateFields(updateData)
@@ -434,7 +466,7 @@ Steps:
 func FetchRoleById(c *gin.Context, roleCode string) (map[string]interface{}, error) {
 
 	if strings.TrimSpace(roleCode) == "" {
-		return nil, errors.New("roleCode cannot be empty")
+		return nil, errors.New(RCBE)
 	}
 	key := util.RoleKey + roleCode
 
@@ -461,7 +493,7 @@ DeleteRole removes a role from DB and clears its cache entry.
 func DeleteRole(c *gin.Context, roleCode string) error {
 
 	if strings.TrimSpace(roleCode) == "" {
-		return errors.New("roleCode cannot be empty")
+		return errors.New(RCBE)
 	}
 
 	collection := db.OpenCollections("role")

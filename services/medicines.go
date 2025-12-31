@@ -125,7 +125,7 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 	userData := make(map[string]interface{})
 	err := db.FindOne(c, collectionFromContext, bson.M{"code": code}, userData)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching user: ", err)
 		return nil, err
 	}
 
@@ -139,7 +139,7 @@ func FetchMedicineByCode(c *gin.Context, medicineId string) (map[string]interfac
 
 	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching medicines: ", err)
 		return nil, err
 	}
 
@@ -249,7 +249,7 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne:", err)
+		log.Println("Error from findOne while fetching medicine:", err)
 		return "", err
 	}
 	pharmacist := make(map[string]interface{})
@@ -259,7 +259,7 @@ func UpdateMedicines(c *gin.Context, medicineId string, data map[string]interfac
 	}
 	err = db.FindOne(c, pharmaCollection, pharmaFilter, pharmacist)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching pharmacist: ", err)
 		return "", err
 	}
 	if pharmacist["createdBy"].(string) != result["hospitalId"].(string) {

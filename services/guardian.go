@@ -51,7 +51,7 @@ func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]int
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching guardian: ", err)
 		return val, err
 	}
 	createdByVal, ok := result["createdBy"]
@@ -76,7 +76,7 @@ func UpdateGuardianByCode(c *gin.Context, guardianId string, data map[string]int
 	log.Println("Updated patient: ", updated.ModifiedCount)
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching updated Guardian: ", err)
 		return val, err
 	}
 	key := util.GuardianKey + guardianId

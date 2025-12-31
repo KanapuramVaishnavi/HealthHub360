@@ -16,6 +16,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+const ERR_WHILE_FETCHING_TENANT string = "Error from findOne while fetching tenant: "
+
 /*
 CreateTenant handles creating a Tenant user.
 It validates email/phone, generates employee code, fetches roleCode,
@@ -103,7 +105,7 @@ func FetchTenantByCode(c *gin.Context, tenantId string) (map[string]interface{},
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from FindOne: ", err)
+		log.Println(ERR_WHILE_FETCHING_TENANT, err)
 		return nil, err
 	}
 	err = redis.SetCache(c, key, result)
@@ -157,7 +159,7 @@ func UpdateTenantByCode(c *gin.Context, tenantId string, data map[string]interfa
 	tenant := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, &tenant)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println(ERR_WHILE_FETCHING_TENANT, err)
 		return "", err
 	}
 	err = updateTenantInDB(tenantId, updateFields)
@@ -252,7 +254,7 @@ func DeleteTenantByCode(c *gin.Context, tenantId string) error {
 	res := make(map[string]interface{})
 	err := db.FindOne(c, collection, filter, res)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println(ERR_WHILE_FETCHING_TENANT, err)
 		return err
 	}
 	if superAdmin != res["createdBy"].(string) {

@@ -16,7 +16,7 @@ COPY . .
 # 6️⃣ Build the Go app
 RUN go build -o app
 
-# 7️⃣ Expose port (example)
+# 7️⃣ Expose port 
 EXPOSE 8080
 
 # 8️⃣ Command to run app
