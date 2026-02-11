@@ -239,84 +239,154 @@ func FetchMedicineFieldsFromPrescription(medicine map[string]interface{}) (strin
 	totalTablets := dosagePerFrequency * timesPerDay * noOfDays
 	return medicineId, totalTablets, nil
 }
-func GenerateBillForMedicines(c *gin.Context, medicalRecord map[string]interface{}) ([]map[string]interface{}, int, error) {
+
+// fetching precription to dispense medines for the patinets
+func fetchPrescriptionFromMedicalRecord(
+	c *gin.Context,
+	medicalRecord map[string]interface{},
+) (map[string]interface{}, error) {
+
 	prescriptionId, err := FetchPrescriptionIdFromMedicalRecord(medicalRecord)
 	if err != nil {
-		log.Println("Error from fetchPrescriptionFromMedicalRecord: ", err)
-		return nil, 0, err
+		log.Println("Error fetching prescription ID:", err)
+		return nil, err
 	}
 
 	prescription, err := FetchPrescriptionByCode(c, prescriptionId)
 	if err != nil {
-		log.Println("Error from fetchPrescriptionByCode: ", err)
+		log.Println("Error fetching prescription:", err)
+		return nil, err
+	}
+
+	return prescription, nil
+}
+
+// calcuate and updates the medicine stock if we needed and give the data we want update the medicines after dispenesed
+func calculateAndUpdateMedicine(
+	c *gin.Context,
+	medicineId string,
+	requiredTablets int,
+	pricePerStrip int,
+	tabletsPerStrip int,
+	availableTablets int,
+) (map[string]interface{}, int, error) {
+
+	singleMedicine := make(map[string]interface{})
+	costPerTablet := pricePerStrip / tabletsPerStrip
+	remainingTablets := availableTablets - requiredTablets
+
+	singleMedicine["medicineId"] = medicineId
+	singleMedicine["requiredTablets"] = strconv.Itoa(requiredTablets)
+	singleMedicine["costPerTablet"] = strconv.Itoa(costPerTablet)
+	singleMedicine["totalNoOfTablets"] = strconv.Itoa(availableTablets)
+
+	if remainingTablets < 0 {
+		singleMedicine["isDispensed"] = false
+		singleMedicine["pricePerMedicine"] = "0"
+		return singleMedicine, 0, nil
+	}
+
+	price := requiredTablets * costPerTablet
+	singleMedicine["isDispensed"] = true
+	singleMedicine["pricePerMedicine"] = strconv.Itoa(price)
+
+	if err := updateMedicineStock(
+		c,
+		medicineId,
+		remainingTablets,
+		tabletsPerStrip,
+	); err != nil {
 		return nil, 0, err
 	}
+
+	return singleMedicine, price, nil
+}
+
+// medicne stock after dispensed gets updated here
+func updateMedicineStock(
+	c *gin.Context,
+	medicineId string,
+	remainingTablets int,
+	tabletsPerStrip int,
+) error {
+
+	update := map[string]interface{}{
+		"noOfstrips":       strconv.Itoa(remainingTablets / tabletsPerStrip),
+		"totalNoOfTablets": strconv.Itoa(remainingTablets),
+	}
+
+	_, err := UpdateMedicines(c, medicineId, update)
+	if err != nil {
+		log.Println("Unable to update medicine stock:", err)
+		return errors.New("unable to update totalNoOfTablets")
+	}
+
+	return nil
+}
+
+// here it calcualtes and update each and evry single medicine we mentioned in the medical record (Prescription one)
+func processSingleMedicine(
+	c *gin.Context,
+	m interface{},
+) (map[string]interface{}, int, error) {
+
+	medicine, ok := m.(map[string]interface{})
+	if !ok {
+		return nil, 0, errors.New(util.UNABLE_TO_FETCH_MEDICINE_FROM_MEDICINE)
+	}
+
+	medicineId, requiredTablets, err := FetchMedicineFieldsFromPrescription(medicine)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	pricePerStrip, tabletsPerStrip, totalTablets, err :=
+		FetchFieldsFromMedicine(c, medicineId)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return calculateAndUpdateMedicine(
+		c,
+		medicineId,
+		requiredTablets,
+		pricePerStrip,
+		tabletsPerStrip,
+		totalTablets,
+	)
+}
+
+func GenerateBillForMedicines(
+	c *gin.Context,
+	medicalRecord map[string]interface{},
+) ([]map[string]interface{}, int, error) {
+
+	prescription, err := fetchPrescriptionFromMedicalRecord(c, medicalRecord)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	medicines, err := ExtractMedicines(prescription)
 	if err != nil {
-		log.Println("Error from extractMedicines: ", err)
 		return nil, 0, err
 	}
 
-	var billMedicines []map[string]interface{}
-	var incMedicinePrice int
+	var (
+		billMedicines   []map[string]interface{}
+		totalBillAmount int
+	)
+
 	for _, m := range medicines {
-
-		medicine, ok := m.(map[string]interface{})
-		if !ok {
-			log.Println("Unable to fetch medicine from listOfMedicines(prescription)")
-			return nil, 0, errors.New(util.UNABLE_TO_FETCH_MEDICINE_FROM_MEDICINE)
-		}
-		log.Println("medicine: ", medicine)
-
-		singleMedicine := make(map[string]interface{})
-		medicineId, totalTablets, err := FetchMedicineFieldsFromPrescription(medicine)
+		item, price, err := processSingleMedicine(c, m)
 		if err != nil {
-			log.Println("Error from FetchMedicineFieldsFromPrescription: ", err)
 			return nil, 0, err
 		}
-		log.Println("medicineId: ", medicineId)
-		pricePerStrip, tabletsPerStrip, totalNoOfTablets, err := FetchFieldsFromMedicine(c, medicineId)
-		if err != nil {
-			log.Println("Error from FetchFieldsFromMedicines: ", err)
-			return nil, 0, err
-		}
-		costPerTablet := pricePerStrip / tabletsPerStrip
-		singleMedicine["requiredTablets"] = strconv.Itoa(totalTablets)
-		singleMedicine["medicineId"] = medicineId
-		singleMedicine["costPerTablet"] = strconv.Itoa(costPerTablet)
-		remainingTablets := totalNoOfTablets - totalTablets
-		log.Println("remainingTablets: ", remainingTablets)
 
-		updateMedicine := make(map[string]interface{})
-		if remainingTablets < 0 {
-			singleMedicine["isDispensed"] = false
-			singleMedicine["pricePerMedicine"] = "0"
-			singleMedicine["totalNoOfTablets"] = strconv.Itoa(totalNoOfTablets)
-		} else {
-			singleMedicine["isDispensed"] = true
-			singleMedicine["totalNoOfTablets"] = strconv.Itoa(totalNoOfTablets)
-
-			pricePerMedicineVal := totalTablets * costPerTablet
-			pricePerMedicine := strconv.Itoa(pricePerMedicineVal)
-			singleMedicine["pricePerMedicine"] = pricePerMedicine
-
-			incMedicinePrice = incMedicinePrice + pricePerMedicineVal
-
-			noOfStrips := remainingTablets / tabletsPerStrip
-			updateMedicine["noOfstrips"] = strconv.Itoa(noOfStrips)
-			updateMedicine["totalNoOfTablets"] = strconv.Itoa(remainingTablets)
-		}
-		if remainingTablets >= 0 {
-			_, err = UpdateMedicines(c, medicineId, updateMedicine)
-			if err != nil {
-				log.Println("Unable to update totalNoOfTablets")
-				return nil, 0, errors.New("Unable to update totalNoOfTablets")
-			}
-		}
-		log.Println("single medicine: ", singleMedicine)
-		billMedicines = append(billMedicines, singleMedicine)
+		billMedicines = append(billMedicines, item)
+		totalBillAmount += price
 	}
-	return billMedicines, incMedicinePrice, nil
+
+	return billMedicines, totalBillAmount, nil
 }
 
 /*
@@ -659,7 +729,7 @@ func CreateRazorpayPaymentLink(amount int, name, email, phone string) (string, e
 	req.SetBasicAuth(key, secret)
 	req.Header.Set("Content-Type", "application/json")
 
-	// Perform request
+	//Perform request
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {

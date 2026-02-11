@@ -17,6 +17,47 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 )
 
+func TrimRemainingData(data map[string]interface{}) error {
+
+	err := common.TrimIfExists(data, "gender")
+	if err != nil {
+		log.Println("Error from trimIfExists", err)
+		return err
+	}
+	err = common.TrimIfExists(data, "admissionDate")
+	if err != nil {
+		log.Println("Error from trimIfExists")
+		return err
+	}
+	return nil
+}
+
+func CreatePatientAndNotify(c *gin.Context, collection string, data map[string]interface{}, code string, otp string) error {
+	if _, err := common.SaveUserToDB(collection, data); err != nil {
+		log.Println("Error from the saveUserToDB:", err)
+		return err
+	}
+	key := util.PatientKey + code
+	err := redis.SetCache(c, key, data)
+	if err != nil {
+		log.Println("Failed caching new patient: ", err)
+	}
+	if err := common.CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
+		log.Println("Error from the createLoginRecord", err)
+		return err
+	}
+	subject := "Your Patient OTP Verification"
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
+
+	err = common.SendOTPToMail(data["email"].(string), subject, body)
+	if err != nil {
+		log.Println("OTP email failed:", err)
+		return errors.New(util.FAILED_TO_SEND_OTP)
+	}
+	log.Println("mail sent successfully")
+	return nil
+}
+
 /*
 * Validate user inputs first
 * Fetch collection name from the roleCode given
@@ -63,14 +104,9 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 		return val, err
 	}
 	log.Println(otp)
-	err = common.TrimIfExists(data, "gender")
+	err = TrimRemainingData(data)
 	if err != nil {
-		log.Println("Error from trimIfExists", err)
-		return val, err
-	}
-	err = common.TrimIfExists(data, "admissionDate")
-	if err != nil {
-		log.Println("Error from trimIfExists")
+		log.Println("Error from trimRemaining data: ", err)
 		return val, err
 	}
 	tenantId, err := common.GetTenantIdFromContext(c)
@@ -109,29 +145,12 @@ func CreatePatient(c *gin.Context, data map[string]interface{}) (string, error) 
 	}
 	log.Println("ListOfGuardians: ", listOfGuardians)
 	data["listOfGuardians"] = listOfGuardians
-
-	if _, err := common.SaveUserToDB(collection, data); err != nil {
-		log.Println("Error from the saveUserToDB:", err)
+	err = CreatePatientAndNotify(c, collection, data, code, otp)
+	if err != nil {
+		log.Println("Error from createPatientAndNotify: ", err)
 		return val, err
 	}
-	key := util.PatientKey + code
-	err = redis.SetCache(c, key, data)
-	if err != nil {
-		log.Println("Failed caching new patient: ", err)
-	}
-	if err := common.CreateLoginRecord(c, collection, code, data["email"].(string), data["phoneNo"].(string), data["password"].(string)); err != nil {
-		log.Println("Error from the createLoginRecord", err)
-		return val, err
-	}
-	subject := "Your Patient OTP Verification"
-	body := fmt.Sprintf("Hello %s,\n\nYour OTP for patient verification is: %s\n\nThank you!", data["name"].(string), otp)
 
-	err = common.SendOTPToMail(data["email"].(string), subject, body)
-	if err != nil {
-		log.Println("OTP email failed:", err)
-		return val, errors.New(util.FAILED_TO_SEND_OTP)
-	}
-	log.Println("mail sent successfully")
 	return "created successfully", nil
 }
 func FetchGuardiansFromData(data map[string]interface{}) ([]interface{}, error) {
@@ -159,6 +178,52 @@ func ValidateGuardianFields(guardian map[string]interface{}) (map[string]interfa
 
 	}
 	return guardian, nil
+}
+func VerifyGuardianAge(guardian map[string]interface{}) error {
+
+	age, err := common.CalculateAge(guardian["dob"].(string))
+	if err != nil {
+		log.Println("Error from calculateAge: ", err)
+		return err
+	}
+	if age < 18 {
+		log.Println("Guardian cannot be minor")
+		return errors.New(util.GUARDIAN_CANNOT_BE_MINOR)
+	}
+
+	guardian["age"] = age
+	return nil
+}
+func persistGuardianAndNotify(c *gin.Context, guardian map[string]interface{}, otp string, guardianId string) error {
+
+	collection := db.OpenCollections(util.GuardianCollection)
+	_, err := db.CreateOne(c, collection, guardian)
+	if err != nil {
+		log.Println("Error while inserting into db: ", err)
+		return err
+	}
+	key := util.GuardianKey + guardianId
+	err = redis.SetCache(c, key, guardian)
+	if err != nil {
+		log.Println("Failed caching new  guardian: ", err)
+	}
+	log.Println("code: ", guardian["code"].(string))
+
+	err = common.CreateLoginRecord(c, util.GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
+	if err != nil {
+		log.Println("Error from guardian createLoginRecord: ", err)
+		return err
+	}
+	subject := "Guardian OTP Verification"
+	body := fmt.Sprintf("Hello %s,\n\nYour OTP for guardian verification is: %s\n\nThank you!", guardian["name"].(string), otp)
+
+	err = common.SendOTPToMail(guardian["email"].(string), subject, body)
+	if err != nil {
+		log.Println("OTP mail failed:", err)
+		return errors.New(util.FAILED_TO_SEND_OTP)
+	}
+	log.Println("mail sent successfully")
+	return nil
 }
 
 /*
@@ -207,43 +272,11 @@ func ValidateGuardianAndCreate(c *gin.Context, data map[string]interface{}, list
 			log.Println("Error from prepareUser: ", err)
 			return nil, err
 		}
-		age, err := common.CalculateAge(guardian["dob"].(string))
-		if err != nil {
-			log.Println("Error from calculateAge: ", err)
+		err = VerifyGuardianAge(guardian)
+		if err := persistGuardianAndNotify(c, guardian, otp, guardianId); err != nil {
 			return nil, err
 		}
-		if age < 18 {
-			log.Println("Guardian cannot be minor")
-			return nil, errors.New(util.GUARDIAN_CANNOT_BE_MINOR)
-		}
-		guardian["age"] = age
-		collection := db.OpenCollections(util.GuardianCollection)
-		_, err = db.CreateOne(c, collection, guardian)
-		if err != nil {
-			log.Println("Error while inserting into db: ", err)
-			return nil, err
-		}
-		key := util.GuardianKey + guardianId
-		err = redis.SetCache(c, key, guardian)
-		if err != nil {
-			log.Println("Failed caching new  guardian: ", err)
-		}
-		log.Println("code: ", guardian["code"].(string))
 
-		err = common.CreateLoginRecord(c, util.GuardianCollection, guardian["code"].(string), guardian["email"].(string), guardian["phoneNo"].(string), guardian["password"].(string))
-		if err != nil {
-			log.Println("Error from guardian createLoginRecord: ", err)
-			return nil, err
-		}
-		subject := "Guardian OTP Verification"
-		body := fmt.Sprintf("Hello %s,\n\nYour OTP for guardian verification is: %s\n\nThank you!", guardian["name"].(string), otp)
-
-		err = common.SendOTPToMail(guardian["email"].(string), subject, body)
-		if err != nil {
-			log.Println("OTP mail failed:", err)
-			return nil, errors.New(util.FAILED_TO_SEND_OTP)
-		}
-		log.Println("mail sent successfully")
 	}
 	return listOfGuardians, nil
 }
@@ -282,7 +315,7 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 
 	err = db.FindOne(c, coll, filter, &result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching user: ", err)
 		return nil, errors.New("record not found")
 	}
 
@@ -296,6 +329,20 @@ func FetchPatientByCode(c *gin.Context, patientId string) (map[string]interface{
 
 	return result, nil
 
+}
+
+func ValidateAdmission(data map[string]interface{}) error {
+	if admissionDateVal, ok := data["admissionDate"]; ok {
+		if dateStr, ok := admissionDateVal.(string); ok {
+			updatedAdmissionDate, err := common.NormalizeDate(dateStr)
+			if err != nil {
+				log.Println("Error from NormalizeDate:", err)
+				return err
+			}
+			data["admissionDate"] = updatedAdmissionDate
+		}
+	}
+	return nil
 }
 
 /*
@@ -325,15 +372,10 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 		log.Println("Error from handleDOB", err)
 		return val, err
 	}
-	if admissionDateVal, ok := data["admissionDate"]; ok {
-		if dateStr, ok := admissionDateVal.(string); ok {
-			updatedAdmissionDate, err := common.NormalizeDate(dateStr)
-			if err != nil {
-				log.Println("Error from NormalizeDate:", err)
-				return val, err
-			}
-			data["admissionDate"] = updatedAdmissionDate
-		}
+	err = ValidateAdmission(data)
+	if err != nil {
+		log.Println("Error from validateAdmission: ", err)
+		return val, err
 	}
 	coll := util.PatientCollection
 	collection := db.OpenCollections(coll)
@@ -349,7 +391,7 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 	result := make(map[string]interface{})
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching patient: ", err)
 		return val, err
 	}
 	createdByVal, ok := result["createdBy"]
@@ -374,7 +416,7 @@ func UpdatePatientByCode(c *gin.Context, patientId string, data map[string]inter
 	log.Println("Updated patient: ", updated.ModifiedCount)
 	err = db.FindOne(c, collection, filter, result)
 	if err != nil {
-		log.Println("Error from findOne: ", err)
+		log.Println("Error from findOne while fetching patient after update: ", err)
 		return val, err
 	}
 	key := util.PatientKey + patientId

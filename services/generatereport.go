@@ -166,7 +166,7 @@ func BuildReportData(c *gin.Context, patient map[string]interface{}) (map[string
 		return nil, errors.New("test mode exit")
 	}
 	patientName := patient["name"].(string)
-	age := toInt(patient["age"])
+	age := patient["age"].(string)
 	gender := patient["gender"].(string)
 	patientID := patient["code"].(string)
 	admissionDate := patient["admissionDate"]

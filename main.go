@@ -2,22 +2,30 @@ package main
 
 import (
 	"HealthHub360/jobs"
-	"HealthHub360/migrations"
 	"HealthHub360/routes"
 	"log"
 
-	authorization "github.com/KanapuramVaishnavi/Core/config/authorization"
 	server "github.com/KanapuramVaishnavi/Core/server"
-
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
+var (
+	startServer = server.Start
+	isTest      = false
+)
+
 func main() {
+	run()
+}
+
+func run() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Error in loading the ENV")
 	}
+
 	defaultopts := server.GetDefaultOptions()
 
 	options := server.Options{
@@ -25,22 +33,39 @@ func main() {
 		MongoEnabled:     defaultopts.MongoEnabled,
 		WebServerEnabled: defaultopts.WebServerEnabled,
 		WebServerPort:    defaultopts.WebServerPort,
-		JobsEnabled:      defaultopts.JobsEnabled,
+
+		JobsEnabled: !isTest,
 		JobsHandler: func() {
+			if isTest {
+				return
+			}
 			jobs.SeedDoctorLeaves()
 			jobs.StartDailyScheduler()
 		},
+
 		WebServerPreHandler: func(r *gin.Engine) {
-			r.Use(authorization.CORSMiddleware())
+			if isTest {
+				return
+			}
+			r.Use(cors.New(cors.Config{
+				AllowOrigins:     []string{"*"},
+				AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+				AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+				AllowCredentials: true,
+			}))
 			routes.Routes(r)
 		},
-		MigrationHandler: func() {
+
+		//MigrationEnabled: !isTest,
+		/*MigrationHandler: func() {
+			if isTest {
+				return
+			}
 			migrations.AddPharmacistIdField()
 			migrations.ChangeLoginAttemptsType()
 			migrations.RemovePharamcistIdFromBill()
 			migrations.UpdateLoginAttemptsInHospitalAdmin()
-		},
-		MigrationEnabled: defaultopts.MigrationEnabled,
+		},*/
 	}
-	server.Start(options)
+	startServer(options)
 }

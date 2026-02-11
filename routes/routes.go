@@ -11,8 +11,9 @@ import (
 func Routes(r *gin.Engine) {
 
 	//public
-	r.POST("/role/create/superAdmin", controllers.CreateRole)
-	r.POST("/superAdmin/create", controllers.CreateSuperAdmin)
+	r.POST("/role/create/", controllers.CreateRole)
+	r.POST("/SUPERADMIN/create", controllers.CreateSuperAdmin)
+	r.GET("/roles/fetchAll", controllers.ReadRoles)
 	controllers.Auth(r)
 	//privateroutes
 	r.Use(authorization.JWTAuth())
